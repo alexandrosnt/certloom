@@ -126,6 +126,7 @@ func (s *Server) Handler() http.Handler {
 	h("GET /api/v1/agents", s.listAgents)
 	h("POST /api/v1/agents/enrollment-tokens", s.createEnrollmentToken)
 	h("POST /api/v1/agents/{id}/revoke", s.revokeAgent)
+	h("GET /api/v1/agents/{id}/inventory", s.getAgentInventory)
 	h("POST /api/v1/agents/{id}/inventory", s.agentInventory)
 	h("GET /api/v1/issuers", s.listIssuers)
 	h("POST /api/v1/issuers", s.createIssuer)
@@ -916,6 +917,15 @@ func (s *Server) revokeAgent(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	w.WriteHeader(204)
+	return nil
+}
+
+func (s *Server) getAgentInventory(w http.ResponseWriter, r *http.Request) error {
+	v, err := s.Svc.AgentInventory(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, v)
 	return nil
 }
 

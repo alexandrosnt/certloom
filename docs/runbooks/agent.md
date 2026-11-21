@@ -343,3 +343,6 @@ certloom webhook rotate-secret itsm           # old secret keeps signing for 24 
 | Agent revoked | Requests refused immediately; active runs fail |
 
 Revoke a host: `certloom agent revoke web-01`.
+
+Windows hosts with IIS: [windows-iis.md](windows-iis.md). Kubernetes (cert-manager
+observation): [kubernetes.md](kubernetes.md).

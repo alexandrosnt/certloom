@@ -1,0 +1,17 @@
+# certloom-agent for in-cluster observation (ADR-0023). Static, non-root.
+FROM golang:1.27-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG VERSION=0.0.0-dev
+ARG COMMIT=unknown
+RUN CGO_ENABLED=0 go build -trimpath \
+      -ldflags "-s -w -X github.com/alexandrosnt/certloom/internal/version.Version=${VERSION} -X github.com/alexandrosnt/certloom/internal/version.Commit=${COMMIT}" \
+      -o /out/ ./cmd/certloom-agent
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/certloom-agent /usr/local/bin/
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/certloom-agent"]
+CMD ["run", "--config", "/etc/certloom-agent/config.yaml"]

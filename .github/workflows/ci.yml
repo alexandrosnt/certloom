@@ -48,6 +48,13 @@ jobs:
         env:
           CERTLOOM_ACME_E2E: "1"
         run: go test -count=1 -v -timeout 20m ./test/acme/
+      # kind cluster with cert-manager; the agent observes it with the RBAC from
+      # deploy/kubernetes/agent.yaml.
+      - name: Kubernetes observation end-to-end (kind, cert-manager)
+        if: matrix.postgres == '18'
+        env:
+          CERTLOOM_KUBE_E2E: "1"
+        run: go test -count=1 -v -timeout 20m ./test/kube/
       - name: scale (10k certificates, 2k endpoints; records numbers)
         if: matrix.postgres == '18'
         env:
@@ -65,6 +72,27 @@ jobs:
           go-version-file: go.mod
       - name: fuzz certificate parser (10 min)
         run: go test ./internal/certparse -run '^$' -fuzz FuzzParse -fuzztime 10m
+
+  # Windows agent (ADR-0022): CNG machine keys, HTTP.sys and a real IIS site.
+  # Hosted runners are elevated, which HTTP.sys configuration needs.
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: install IIS
+        shell: pwsh
+        run: Install-WindowsFeature -Name Web-Server, Web-Static-Content
+      - name: agent and Windows API tests (elevated), IIS end to end
+        env:
+          CERTLOOM_IIS_E2E: "1"
+        run: go test -v ./internal/winapi/ ./internal/agent/ ./cmd/certloom-agent/
+      - name: lint for Windows
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
 
   lint:
     runs-on: ubuntu-latest
@@ -158,4 +186,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: build container image
-        run: docker build -t certloom:ci .
+        run: docker build -t certloom:ci . && docker build -f Dockerfile.agent -t certloom-agent:ci .

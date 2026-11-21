@@ -565,9 +565,16 @@ paths:
         "204": { description: Revoked }
         "404": { $ref: "#/components/responses/Problem" }
   /api/v1/agents/{id}/inventory:
+    get:
+      tags: [agents]
+      summary: Last observations reported by the agent (IIS bindings, win-acme renewals, Certbot lineages, Kubernetes objects)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
     post:
       tags: [agents]
-      summary: Ask the agent to report certificate files and Certbot lineages (read-only)
+      summary: Ask the agent to report certificate files, Certbot and win-acme renewals, IIS bindings or Kubernetes objects (read-only)
       parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
       responses:
         "202": { $ref: "#/components/responses/Object" }

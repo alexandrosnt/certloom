@@ -24,6 +24,18 @@ Not done yet, roughly in the order I want to tackle it.
 - `deployment list` shows the stored approval state; a legacy deployment under required
   approvals still shows "approved" until it is next checked.
 
+## Windows and Kubernetes
+- IIS: Central Certificate Store bindings are only reported; creating bindings and TPM
+  keys are not supported yet.
+- The Windows IIS test runs in CI without ACME; run one renewal against Pebble or
+  Let's Encrypt staging on a real Windows Server.
+- Windows agent: signed MSI with the release work (M8); logs go to a file, not the
+  Event Log.
+- Kubernetes: no Helm chart yet; trust-manager is tested with its CRD only (no
+  controller); TLS Secrets not managed by cert-manager are not seen.
+- An agent result whose import fails is retried by the agent forever without a visible
+  error on the control plane; surface it.
+
 ## Control plane
 - systemd unit and a non-Docker install guide for `certloomd`. With a distro PostgreSQL
   the owner role needs `CREATEROLE` (PG 16+), because the first migration creates

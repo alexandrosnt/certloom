@@ -37,13 +37,13 @@ func agentCmd() *cobra.Command {
 	revoke := &cobra.Command{Use: "revoke AGENT", Short: "Revoke an agent immediately (owner)", Args: cobra.ExactArgs(1), RunE: run(func(c *client, args []string) error {
 		return postAndPrint(c, "POST", "/api/v1/agents/"+url.PathEscape(args[0])+"/revoke", nil, func(json.RawMessage) { fmt.Println("Revoked.") })
 	})}
-	inv := &cobra.Command{Use: "inventory AGENT", Short: "Ask an agent to report certificates and Certbot lineages on its host", Args: cobra.ExactArgs(1),
+	inv := &cobra.Command{Use: "inventory AGENT", Short: "Ask an agent to report certificates, renewal clients, IIS bindings or Kubernetes objects on its host", Args: cobra.ExactArgs(1),
 		RunE: run(func(c *client, args []string) error {
 			return postAndPrint(c, "POST", "/api/v1/agents/"+url.PathEscape(args[0])+"/inventory", nil, func(json.RawMessage) {
 				fmt.Println("Inventory requested; results appear in `certloom inventory list` once the agent reports.")
 			})
 		})}
-	cmd.AddCommand(token, revoke, inv, listCmd("list", "List agents", "/api/v1/agents", "ID\tNAME\tHEALTH\tHOST\tVERSION\tTARGETS",
+	cmd.AddCommand(token, revoke, inv, observationsCmd(), listCmd("list", "List agents", "/api/v1/agents", "ID\tNAME\tHEALTH\tHOST\tVERSION\tTARGETS",
 		func(w io.Writer, raw json.RawMessage) {
 			var a struct {
 				ID, Name, Health, Hostname, Version string

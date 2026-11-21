@@ -15,7 +15,7 @@ import (
 // handleInventory reports certificate files (public certificates only; PEM
 // blocks that are not CERTIFICATE are dropped) and Certbot lineages, which
 // are read, never modified.
-func (a *Agent) handleInventory(_ context.Context, _ *agentproto.Task) (any, error) {
+func (a *Agent) handleInventory(ctx context.Context, _ *agentproto.Task) (any, error) {
 	out := agentproto.InventoryOutput{Certificates: []agentproto.FoundCert{}}
 	seen := map[string]bool{}
 	add := func(path string) {
@@ -63,6 +63,25 @@ func (a *Agent) handleInventory(_ context.Context, _ *agentproto.Task) (any, err
 			add(l.CertPath)
 		}
 		out.Certbot = append(out.Certbot, l)
+	}
+	if a.win != nil {
+		b, err := a.inventoryIIS(ctx)
+		if err != nil {
+			a.log.Warn("IIS inventory failed", "error", err)
+		}
+		out.IIS = b
+		dir := a.cfg.WinACMEDir
+		if dir == "" {
+			dir = filepath.Join(os.Getenv("ProgramData"), "win-acme")
+		}
+		out.WinACME = readWinACME(dir)
+	}
+	if a.cfg.Kubernetes != nil {
+		k, err := a.inventoryKube(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out.Kubernetes = k
 	}
 	return out, nil
 }

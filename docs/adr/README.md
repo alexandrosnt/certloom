@@ -28,3 +28,8 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0016](0016-policy-exceptions.md) | Policy exceptions and acknowledgement | Accepted |
 | [0017](0017-dns01.md) | DNS-01 challenges and wildcard certificates | Accepted |
 | [0018](0018-central-dns-credentials.md) | Central DNS solvers and credential delivery | Accepted |
+| [0019](0019-acme-eab.md) | ACME External Account Binding | Accepted |
+| [0020](0020-certificate-templates.md) | Certificate templates | Accepted |
+| [0021](0021-event-webhooks.md) | Event webhooks | Accepted |
+| [0022](0022-windows-iis.md) | Windows agent, IIS / HTTP.sys bindings, win-acme discovery | Accepted |
+| [0023](0023-kubernetes-observation.md) | Kubernetes observation of cert-manager and trust-manager | Accepted |

@@ -37,3 +37,9 @@ linters:
       - path: internal/web/web\.go
         linters: [gosec]
         text: "G124:"
+      # The Windows bindings pass Go memory to Win32 calls (unsafe by nature)
+      # and convert lengths of certificates and thumbprints, which are far
+      # below 4 GiB, to the DWORDs the API takes.
+      - path: internal/winapi/
+        linters: [gosec]
+        text: "G(103|115):"

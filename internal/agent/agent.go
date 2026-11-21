@@ -49,6 +49,9 @@ type Agent struct {
 	cert   *x509.Certificate
 	// HPKE sealing keys (seal.go)
 	sealPriv, sealPub, sealPrev []byte
+	// win is the Windows key store, certificate store and HTTP.sys access
+	// used by iis targets; nil on other systems.
+	win winHost
 
 	// Handlers can be replaced in tests.
 	handlers map[string]func(context.Context, *agentproto.Task) (any, error)
@@ -96,7 +99,7 @@ func pinnedTLS(caHash, serverName string) *tls.Config {
 
 // Enroll performs one-time enrollment and writes the identity to state_dir.
 func Enroll(ctx context.Context, cfg *Config, token, caHash, hostname string) (string, error) {
-	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+	if err := makeStateDir(cfg.StateDir); err != nil {
 		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(cfg.StateDir, "agent.json")); err == nil {
@@ -156,7 +159,7 @@ func Enroll(ctx context.Context, cfg *Config, token, caHash, hostname string) (s
 
 // New loads an enrolled agent.
 func New(cfg *Config, log *slog.Logger) (*Agent, error) {
-	a := &Agent{cfg: cfg, log: log}
+	a := &Agent{cfg: cfg, log: log, win: newWinHost()}
 	setDNSResolvers(cfg.Resolvers)
 	b, err := os.ReadFile(a.path("agent.json"))
 	if err != nil {
@@ -260,7 +263,8 @@ func (a *Agent) Heartbeat(ctx context.Context) error {
 	host, _ := os.Hostname()
 	hb := agentproto.Heartbeat{Version: version.Version, Hostname: host}
 	for _, t := range a.cfg.Targets {
-		hb.Targets = append(hb.Targets, agentproto.Target{Name: t.Name, Type: t.Type, AllowedSANs: t.AllowedSANs, ACME: t.Webroot != ""})
+		hb.Targets = append(hb.Targets, agentproto.Target{Name: t.Name, Type: t.Type, AllowedSANs: t.AllowedSANs, ACME: t.Webroot != "",
+			Site: t.Site, Bindings: t.Bindings})
 	}
 	for _, t := range agentproto.AllTaskTypes {
 		if a.cfg.taskAllowed(t) {
@@ -268,6 +272,7 @@ func (a *Agent) Heartbeat(ctx context.Context) error {
 		}
 	}
 	hb.DNSSolvers = a.cfg.dnsSolverInfo()
+	hb.InventorySeconds = a.cfg.inventoryInterval()
 	hb.NoCentralDNS, hb.NoCentralEAB = !a.cfg.centralDNSAllowed(), !a.cfg.centralEABAllowed()
 	if !hb.NoCentralDNS || !hb.NoCentralEAB {
 		a.mu.Lock()
@@ -442,3 +447,9 @@ func (a *Agent) SetHandler(taskType string, h func(context.Context, *agentproto.
 
 // Config returns the agent's configuration.
 func (a *Agent) Config() *Config { return a.cfg }
+
+// Enrolled reports whether the state directory already holds an identity.
+func Enrolled(cfg *Config) bool {
+	_, err := os.Stat(filepath.Join(cfg.StateDir, "agent.json"))
+	return err == nil
+}

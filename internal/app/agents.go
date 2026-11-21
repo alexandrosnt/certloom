@@ -220,8 +220,14 @@ func (s *Service) importInventory(ctx context.Context, tx *store.Tx, id AgentIde
 			}
 		}
 	}
+	observed, err := s.importObservations(ctx, tx, id.AgentID, inv)
+	if err != nil {
+		return err
+	}
+	n += observed
 	return s.systemAudit(ctx, tx, "agent:"+id.AgentID, "agents.inventory", "agent", id.AgentID, map[string]any{
-		"files": len(inv.Certificates), "new_certificates": n, "certbot_lineages": len(inv.Certbot)})
+		"files": len(inv.Certificates), "new_certificates": n, "certbot_lineages": len(inv.Certbot),
+		"iis_bindings": len(inv.IIS), "win_acme_renewals": len(inv.WinACME), "kubernetes": inv.Kubernetes != nil})
 }
 
 // ListAgents lists agents with derived health.
@@ -255,21 +261,25 @@ func (s *Service) RequestInventoryScan(ctx context.Context, p authz.Principal, r
 		if err != nil {
 			return err
 		}
-		t, err := s.signTask(tx.OrgID, a.ID, agentproto.TaskInventoryScan, "", 0, struct{}{}, time.Hour)
-		if err != nil {
+		if taskID, err = s.queueInventory(ctx, tx, a.ID); err != nil {
 			return err
 		}
-		env, err := agentproto.Sign(s.PKI.TaskKey, t)
-		if err != nil {
-			return err
-		}
-		if err := tx.InsertTask(ctx, t, env, nil); err != nil {
-			return err
-		}
-		taskID = t.ID
 		return s.audit(ctx, tx, p, "agents.inventory_requested", "agent", a.ID, nil)
 	})
 	return taskID, err
+}
+
+// queueInventory signs and queues an inventory task for an agent.
+func (s *Service) queueInventory(ctx context.Context, tx *store.Tx, agentID string) (string, error) {
+	t, err := s.signTask(tx.OrgID, agentID, agentproto.TaskInventoryScan, "", 0, struct{}{}, time.Hour)
+	if err != nil {
+		return "", err
+	}
+	env, err := agentproto.Sign(s.PKI.TaskKey, t)
+	if err != nil {
+		return "", err
+	}
+	return t.ID, tx.InsertTask(ctx, t, env, nil)
 }
 
 func (s *Service) signTask(org, agent, typ, target string, seq int64, payload any, ttl time.Duration) (agentproto.Task, error) {

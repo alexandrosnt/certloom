@@ -64,6 +64,18 @@ func loadOrCreateKey(path string) (crypto.Signer, error) {
 	return k, os.Rename(tmp, path)
 }
 
+// runKey returns the key of a run: a file for nginx, a non-exportable CNG
+// machine key for iis (ADR-0022). Both survive a retried issue task.
+func (a *Agent) runKey(tgt *TargetConfig, run, dir string) (crypto.Signer, error) {
+	if tgt.Type == agentproto.TargetIIS {
+		if a.win == nil {
+			return nil, errors.New("iis targets need Windows")
+		}
+		return a.win.Key(iisKeyName(tgt.Name, run), true)
+	}
+	return loadOrCreateKey(filepath.Join(dir, "privkey.pem"))
+}
+
 func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error) {
 	tgt, ok := a.cfg.target(t.Target)
 	if !ok {
@@ -96,9 +108,14 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 		return nil, errors.New("issuer terms of service not accepted")
 	}
 	dir := a.runDir(tgt.Name, p.RunID)
-	key, err := loadOrCreateKey(filepath.Join(dir, "privkey.pem"))
+	key, err := a.runKey(tgt, p.RunID, dir)
 	if err != nil {
 		return nil, fmt.Errorf("key: %w", err)
+	}
+	if tgt.Type == agentproto.TargetIIS && !dns01 {
+		if err := writeChallengeWebConfig(tgt.Webroot); err != nil {
+			return nil, err
+		}
 	}
 	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
 		Subject: pkix.Name{CommonName: p.SANs[0]}, DNSNames: p.SANs}, key)

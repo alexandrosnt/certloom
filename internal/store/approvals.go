@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexandrosnt/certloom/internal/agentproto"
 	"github.com/alexandrosnt/certloom/internal/ids"
 	"github.com/jackc/pgx/v5"
 )
@@ -85,6 +86,15 @@ func BuildDeploymentSpec(d *Deployment, iss *Issuer, a *Agent) DeploymentSpec {
 	for _, t := range a.Capabilities.Targets {
 		if t.Name == d.Target {
 			tgt.Type = t.Type
+			if t.Type == agentproto.TargetIIS {
+				// Which site and bindings get the certificate is part of what is approved.
+				b := make([]string, 0, len(t.Bindings))
+				for _, x := range t.Bindings {
+					b = append(b, strings.ToLower(x))
+				}
+				slices.Sort(b)
+				tgt.Attributes = map[string]string{"site": strings.ToLower(t.Site), "bindings": strings.Join(b, ",")}
+			}
 		}
 	}
 	spec := DeploymentSpec{V: 1, Lineage: d.LineageID, SANs: slices.Compact(sans), Purpose: PurposeTLSServer,

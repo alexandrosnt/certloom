@@ -98,6 +98,9 @@ func (a *Agent) handleDeploy(ctx context.Context, t *agentproto.Task) (any, erro
 	if err := json.Unmarshal(t.Payload, &p); err != nil {
 		return nil, err
 	}
+	if tgt.Type == agentproto.TargetIIS {
+		return a.deployIIS(ctx, tgt, p)
+	}
 	dir := a.runDir(tgt.Name, p.RunID)
 	keyPEM, err := os.ReadFile(filepath.Join(dir, "privkey.pem"))
 	if err != nil {
@@ -167,6 +170,9 @@ func (a *Agent) handleVerify(ctx context.Context, t *agentproto.Task) (any, erro
 	if err := json.Unmarshal(t.Payload, &p); err != nil {
 		return nil, err
 	}
+	if tgt.Type == agentproto.TargetIIS {
+		return a.verifyIIS(ctx, tgt, p)
+	}
 	var served string
 	var lastErr error
 	// Reloads are asynchronous: give old workers a few seconds to drain.
@@ -212,6 +218,9 @@ func (a *Agent) handleRollback(ctx context.Context, t *agentproto.Task) (any, er
 	var p agentproto.RollbackPayload
 	if err := json.Unmarshal(t.Payload, &p); err != nil {
 		return nil, err
+	}
+	if tgt.Type == agentproto.TargetIIS {
+		return a.rollbackIIS(ctx, tgt, p)
 	}
 	prev, ok := a.state.LookupPrevious(tgt.Name, p.RunID)
 	if !ok {

@@ -105,6 +105,7 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 		return err
 	})
 	loop("eab", 10*time.Minute, svc.SweepEABPools)
+	loop("inventory", time.Minute, svc.RequestDueInventories)
 	loop("prune", time.Hour, func(ctx context.Context) error {
 		r, err := svc.Prune(ctx)
 		if r.Observations+r.IdempotencyKeys+r.Sessions > 0 {

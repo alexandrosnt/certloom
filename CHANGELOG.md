@@ -3,6 +3,24 @@
 ## Unreleased
 
 ### Added
+- Windows agent for IIS (ADR-0022): target type `iis` (site + bindings). Keys are
+  created non-exportable in the machine key store and sign the CSR inside CNG; the
+  certificate goes to `WebHosting` and the configured HTTP.sys bindings are switched
+  in place, read back, verified by TLS handshake and restored on failure. Older
+  certloom certificates are pruned. `certloom-agent service install|uninstall` runs it
+  as a Windows service. IIS hosts report their https bindings every 15 minutes;
+  `iis_binding_drift` findings show bindings that no longer serve the deployment's
+  certificate. win-acme renewals are discovered read-only.
+- Kubernetes observation (ADR-0023): `certloom-agent` with a `kubernetes:` block runs
+  in the cluster (`deploy/kubernetes/agent.yaml`, `Dockerfile.agent`) with `get`/`list`
+  on cert-manager and trust-manager objects and Ingresses only, no Secret access.
+  Certificates are imported from CertificateRequest status; findings
+  `k8s_certificate_not_ready`, `k8s_renewal_overdue`, `k8s_request_failed`,
+  `k8s_issuer_not_ready`, `k8s_bundle_not_synced`. `certloom-agent run
+  --enroll-token-file` enrolls on first start.
+- Agents can ask for periodic inventories (`inventory_seconds` in the heartbeat);
+  `GET /api/v1/agents/{id}/inventory` and `certloom agent observations` show the last
+  one.
 - Web UI pages for members, policy and channels. Owners add and remove OIDC members
   (removal goes through a confirmation page; you cannot remove yourself there). The
   policy page shows the active version; with `policy:manage` you edit the YAML, review

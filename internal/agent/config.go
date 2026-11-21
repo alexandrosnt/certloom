@@ -41,6 +41,12 @@ type Config struct {
 	// CentralEAB: set false to refuse EAB keys sent by the control plane
 	// (ADR-0019).
 	CentralEAB *bool `json:"central_eab,omitempty"`
+	// Kubernetes switches the agent to in-cluster observation (ADR-0023):
+	// it then only runs inventory tasks and has no targets.
+	Kubernetes *KubeConfig `json:"kubernetes,omitempty"`
+	// WinACMEDir is read (never written) for win-acme discovery on Windows;
+	// default %ProgramData%win-acme.
+	WinACMEDir string `json:"win_acme_dir,omitempty"`
 }
 
 // EABConfig is a host-local EAB key for one ACME directory.
@@ -54,7 +60,7 @@ type EABConfig struct {
 // TargetConfig is a locally configured deployment target.
 type TargetConfig struct {
 	Name string `json:"name"`
-	Type string `json:"type"` // nginx
+	Type string `json:"type"` // nginx or iis
 	// LiveLink is a symlink the web server reads through, e.g.
 	// /etc/certloom/live/www -> <state_dir>/certs/www/<run>. The server config
 	// references LiveLink/fullchain.pem and LiveLink/privkey.pem.
@@ -64,6 +70,11 @@ type TargetConfig struct {
 	ReloadCommand []string `json:"reload_command"`
 	VerifyAddress string   `json:"verify_address"` // host:port for local TLS verification
 	AllowedSANs   []string `json:"allowed_sans"`
+	// Site and Bindings are used by iis targets: the IIS site name and the
+	// https bindings (ip:port:host, as in applicationHost.config) whose
+	// certificate the agent replaces.
+	Site     string   `json:"site,omitempty"`
+	Bindings []string `json:"bindings,omitempty"`
 }
 
 // LoadConfig reads and validates a config file.
@@ -93,6 +104,9 @@ func (c *Config) Validate() error {
 			p = append(p, "unknown task type in allowed_tasks: "+t)
 		}
 	}
+	if c.Kubernetes != nil {
+		p = append(p, c.validateKube()...)
+	}
 	seen := map[string]bool{}
 	for _, t := range c.Targets {
 		switch {
@@ -100,8 +114,10 @@ func (c *Config) Validate() error {
 			p = append(p, fmt.Sprintf("target name %q must be non-empty without / \\ . or spaces", t.Name))
 		case seen[t.Name]:
 			p = append(p, "duplicate target "+t.Name)
-		case t.Type != "nginx":
-			p = append(p, fmt.Sprintf("target %s: type must be nginx", t.Name))
+		case t.Type == agentproto.TargetIIS:
+			p = append(p, t.validateIIS()...)
+		case t.Type != agentproto.TargetNginx:
+			p = append(p, fmt.Sprintf("target %s: type must be nginx or iis", t.Name))
 		case !filepath.IsAbs(t.LiveLink):
 			p = append(p, fmt.Sprintf("target %s: live_link must be absolute", t.Name))
 		case len(t.TestCommand) == 0 || len(t.ReloadCommand) == 0:
@@ -131,6 +147,9 @@ func (c *Config) target(name string) (*TargetConfig, bool) {
 }
 
 func (c *Config) taskAllowed(t string) bool {
+	if c.Kubernetes != nil && t != agentproto.TaskInventoryScan {
+		return false // observation only; never stand in for cert-manager
+	}
 	if len(c.AllowedTasks) == 0 {
 		return slices.Contains(agentproto.AllTaskTypes, t)
 	}
@@ -171,4 +190,22 @@ func (c *Config) localEAB(directoryURL string) *EABConfig {
 		}
 	}
 	return nil
+}
+
+// inventoryInterval is how often this agent wants to be asked for an
+// inventory: in-cluster observation polls, and IIS hosts report bindings so
+// drift is noticed between renewals.
+func (c *Config) inventoryInterval() int {
+	if c.Kubernetes != nil {
+		if c.Kubernetes.IntervalSeconds > 0 {
+			return c.Kubernetes.IntervalSeconds
+		}
+		return 300
+	}
+	for _, t := range c.Targets {
+		if t.Type == agentproto.TargetIIS {
+			return 900
+		}
+	}
+	return 0
 }

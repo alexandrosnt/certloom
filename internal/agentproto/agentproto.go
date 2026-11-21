@@ -78,10 +78,20 @@ type RenewRequest struct {
 // Target is a deployment target configured locally on the agent.
 type Target struct {
 	Name        string   `json:"name"`
-	Type        string   `json:"type"` // nginx
+	Type        string   `json:"type"` // nginx or iis
 	AllowedSANs []string `json:"allowed_sans"`
 	ACME        bool     `json:"acme"` // has an HTTP-01 webroot
+	// Site and Bindings identify an IIS target (ADR-0022); both are part of
+	// the approved deployment spec.
+	Site     string   `json:"site,omitempty"`
+	Bindings []string `json:"bindings,omitempty"`
 }
+
+// Target types.
+const (
+	TargetNginx = "nginx"
+	TargetIIS   = "iis"
+)
 
 // DNSSolver describes one DNS-01 solver configured on an agent host.
 type DNSSolver struct {
@@ -126,6 +136,9 @@ type Heartbeat struct {
 	ACMEAccounts []string `json:"acme_accounts,omitempty"`
 	// LocalEAB lists ACME directory URLs with EAB configured on the host.
 	LocalEAB []string `json:"local_eab,omitempty"`
+	// InventorySeconds asks the control plane for an inventory task at this
+	// interval (in-cluster agents, IIS hosts for binding drift); 0 = on demand.
+	InventorySeconds int `json:"inventory_seconds,omitempty"`
 }
 
 // Task is the signed unit of work.
@@ -283,6 +296,99 @@ type RollbackPayload struct {
 type InventoryOutput struct {
 	Certificates []FoundCert      `json:"certificates"`
 	Certbot      []CertbotLineage `json:"certbot,omitempty"`
+	// IIS and WinACME come from Windows agents, Kubernetes from in-cluster ones.
+	IIS        []IISBinding     `json:"iis,omitempty"`
+	WinACME    []WinACMERenewal `json:"win_acme,omitempty"`
+	Kubernetes *KubeInventory   `json:"kubernetes,omitempty"`
+}
+
+// IISBinding is one https binding of an IIS site with the certificate
+// HTTP.sys holds for it. CertHash is the SHA-1 thumbprint (upper-case hex),
+// empty when HTTP.sys has no entry for the binding. CertSHA256 is set when
+// the certificate was found in its store.
+type IISBinding struct {
+	Site       string `json:"site"`
+	Binding    string `json:"binding"` // ip:port:host as in applicationHost.config
+	SSLFlags   int    `json:"ssl_flags"`
+	CertHash   string `json:"cert_hash,omitempty"`
+	CertStore  string `json:"cert_store,omitempty"`
+	CertSHA256 string `json:"cert_sha256,omitempty"`
+	ChainPEM   string `json:"chain_pem,omitempty"`
+}
+
+// WinACMERenewal is read-only metadata from a win-acme renewal file.
+type WinACMERenewal struct {
+	ID            string   `json:"id"`
+	FriendlyName  string   `json:"friendly_name,omitempty"`
+	Hosts         []string `json:"hosts,omitempty"`
+	Target        string   `json:"target,omitempty"`
+	Store         []string `json:"store,omitempty"`
+	Installation  []string `json:"installation,omitempty"`
+	LastRenewal   string   `json:"last_renewal,omitempty"`
+	LastRenewalOK bool     `json:"last_renewal_ok"`
+	Path          string   `json:"path"`
+}
+
+// KubeInventory is what an in-cluster agent observed (ADR-0023). Objects
+// that could not be listed (missing CRD or permission) are named in Errors.
+type KubeInventory struct {
+	Cluster      string           `json:"cluster"`
+	Certificates []KubeCert       `json:"certificates"`
+	Issuers      []KubeIssuer     `json:"issuers"`
+	Bundles      []KubeBundle     `json:"bundles"`
+	Ingresses    []KubeIngressTLS `json:"ingresses"`
+	Errors       []string         `json:"errors,omitempty"`
+}
+
+// KubeCondition is a status condition of a cert-manager or trust-manager object.
+type KubeCondition struct {
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	Reason             string `json:"reason,omitempty"`
+	Message            string `json:"message,omitempty"`
+	LastTransitionTime string `json:"last_transition_time,omitempty"`
+}
+
+// KubeCert is a cert-manager Certificate. ChainPEM comes from the
+// CertificateRequest of the current revision and is empty when that request
+// no longer exists.
+type KubeCert struct {
+	Namespace     string          `json:"namespace"`
+	Name          string          `json:"name"`
+	SecretName    string          `json:"secret_name"`
+	DNSNames      []string        `json:"dns_names,omitempty"`
+	IssuerKind    string          `json:"issuer_kind"`
+	IssuerName    string          `json:"issuer_name"`
+	Revision      int             `json:"revision,omitempty"`
+	NotAfter      string          `json:"not_after,omitempty"`
+	RenewalTime   string          `json:"renewal_time,omitempty"`
+	Conditions    []KubeCondition `json:"conditions,omitempty"`
+	RequestName   string          `json:"request_name,omitempty"`
+	RequestFailed string          `json:"request_failed,omitempty"` // Denied or Failed reason of the latest request
+	ChainPEM      string          `json:"chain_pem,omitempty"`
+}
+
+// KubeIssuer is an Issuer (Namespace set) or ClusterIssuer.
+type KubeIssuer struct {
+	Namespace  string          `json:"namespace,omitempty"`
+	Name       string          `json:"name"`
+	Type       string          `json:"type"` // acme, ca, selfSigned, vault, ...
+	Conditions []KubeCondition `json:"conditions,omitempty"`
+}
+
+// KubeBundle is a trust-manager Bundle.
+type KubeBundle struct {
+	Name       string          `json:"name"`
+	Target     string          `json:"target"`
+	Conditions []KubeCondition `json:"conditions,omitempty"`
+}
+
+// KubeIngressTLS maps an Ingress TLS secret to its hosts.
+type KubeIngressTLS struct {
+	Namespace  string   `json:"namespace"`
+	Name       string   `json:"name"`
+	SecretName string   `json:"secret_name"`
+	Hosts      []string `json:"hosts"`
 }
 
 // FoundCert is a certificate file found on disk.

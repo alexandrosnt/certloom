@@ -1,0 +1,120 @@
+# certloom-agent observing cert-manager and trust-manager (ADR-0023).
+# Read-only: get/list on certificates, requests, issuers, bundles and
+# ingresses. No access to Secrets or ConfigMaps.
+#
+# Before applying:
+#   1. set server and cluster in the ConfigMap,
+#   2. set --ca-hash to the value printed by `certloom agent token`,
+#   3. create the token Secret:
+#        kubectl -n certloom-agent create secret generic certloom-agent-enroll \
+#          --from-literal=token=<one-time token>
+#      The agent reads it only on its first start; delete it afterwards.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: certloom-agent
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: certloom-agent
+  namespace: certloom-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: certloom-agent-observer
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests", "issuers", "clusterissuers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["trust.cert-manager.io"]
+    resources: ["bundles"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: certloom-agent-observer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: certloom-agent-observer
+subjects:
+  - kind: ServiceAccount
+    name: certloom-agent
+    namespace: certloom-agent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: certloom-agent
+  namespace: certloom-agent
+data:
+  config.yaml: |
+    server: https://certloom.example.com:8444
+    state_dir: /var/lib/certloom-agent
+    name: k8s-prod
+    targets: []
+    kubernetes:
+      cluster: prod
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: certloom-agent-state
+  namespace: certloom-agent
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: certloom-agent
+  namespace: certloom-agent
+spec:
+  replicas: 1 # one agent per cluster; the state volume is not shared
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: certloom-agent }
+  template:
+    metadata:
+      labels: { app: certloom-agent }
+    spec:
+      serviceAccountName: certloom-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: agent
+          image: certloom-agent:dev # docker build -f Dockerfile.agent -t certloom-agent:dev .
+          args: ["run", "--config", "/etc/certloom-agent/config.yaml",
+                 "--enroll-token-file", "/var/run/certloom-agent/enroll/token",
+                 "--ca-hash", "sha256:REPLACE"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/certloom-agent, readOnly: true }
+            - { name: enroll, mountPath: /var/run/certloom-agent/enroll, readOnly: true }
+            - { name: state, mountPath: /var/lib/certloom-agent }
+      volumes:
+        - name: config
+          configMap: { name: certloom-agent }
+        - name: enroll
+          secret: { secretName: certloom-agent-enroll, optional: true }
+        - name: state
+          persistentVolumeClaim: { claimName: certloom-agent-state }
