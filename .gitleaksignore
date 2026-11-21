@@ -1,0 +1,2 @@
+# Test-only TSIG key in a test file (not a credential); later replaced by a derived value.
+c8de69ba9f98ec1a4cc6b66806dc70b69a5947ce:internal/agent/dns_test.go:generic-api-key:24

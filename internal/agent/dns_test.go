@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -21,7 +22,11 @@ import (
 	"github.com/miekg/dns"
 )
 
-const testTSIGSecret = "c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0LTEyMzQ="
+// Test TSIG keys are derived from plain text so secret scanners do not flag them.
+var (
+	testTSIGSecret  = base64.StdEncoding.EncodeToString([]byte("certloom test tsig key, 32 bytes"))
+	wrongTSIGSecret = base64.StdEncoding.EncodeToString([]byte("not the key the server knows...."))
+)
 
 // fakeDNS is an authoritative server for a few test zones. It accepts
 // TSIG-signed RFC 2136 updates and answers SOA, CNAME and TXT queries.
@@ -118,6 +123,12 @@ func (f *fakeDNS) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		m.Ns = append(m.Ns, soa)
 	}
 	_ = w.WriteMsg(m)
+}
+
+func (f *fakeDNS) setCNAME(name, target string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cname[name] = target
 }
 
 func (f *fakeDNS) records(name string) []string {
@@ -232,7 +243,7 @@ func TestRFC2136PresentAndCleanup(t *testing.T) {
 		t.Fatalf("second cleanup: %v", err)
 	}
 
-	bad, _ := newRFC2136(&DNSSolverConfig{Nameserver: f.addr, TSIGFile: writeTSIGKey(t, "hmac-sha256", "d3JvbmctZnJvbmctd3Jvbmctd3Jvbmctd3Jvbmc=")})
+	bad, _ := newRFC2136(&DNSSolverConfig{Nameserver: f.addr, TSIGFile: writeTSIGKey(t, "hmac-sha256", wrongTSIGSecret)})
 	if err := bad.Present(ctx, a); err == nil {
 		t.Fatal("update with the wrong key accepted")
 	}
@@ -242,7 +253,7 @@ func TestRFC2136PresentAndCleanup(t *testing.T) {
 // solver is chosen, so a delegated validation zone gets the record.
 func TestDNSMuxFollowsCNAME(t *testing.T) {
 	f := startFakeDNS(t, "example.test.", "validation.example.net.")
-	f.cname["_acme-challenge.app.example.test."] = "app.validation.example.net."
+	f.setCNAME("_acme-challenge.app.example.test.", "app.validation.example.net.")
 	setDNSResolvers([]string{f.addr})
 	t.Cleanup(func() { dns01.SetDefaultClient(dns01.NewClient(nil)) })
 	key := writeTSIGKey(t, "hmac-sha256", testTSIGSecret)
@@ -370,7 +381,7 @@ func TestCheckDNSSolver(t *testing.T) {
 		t.Fatalf("left behind: %v", got)
 	}
 
-	cfg.DNSSolvers[0].TSIGFile = writeTSIGKey(t, "hmac-sha256", "d3JvbmctZnJvbmctd3Jvbmctd3Jvbmctd3Jvbmc=")
+	cfg.DNSSolvers[0].TSIGFile = writeTSIGKey(t, "hmac-sha256", wrongTSIGSecret)
 	out.Reset()
 	if err := CheckDNSSolver(context.Background(), cfg, "internal", "www.example.test", &out, quietLog); err == nil ||
 		!strings.Contains(out.String(), "FAIL  present") {
