@@ -2,3 +2,4 @@
 c8de69ba9f98ec1a4cc6b66806dc70b69a5947ce:internal/agent/dns_test.go:generic-api-key:24
 # Standard Webhooks spec test vector (message id), not a credential; later split in the source.
 21262204a51e05d0670607d496faa07054ddc2d4:internal/webhook/webhook_test.go:generic-api-key:14
+e6e887f13a743a2e9d2466b8380179d774db64f1:internal/webhook/webhook_test.go:generic-api-key:14
