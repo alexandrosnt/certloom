@@ -61,7 +61,7 @@ func buildDeb(t *testing.T) string {
 	}
 	cp(filepath.Join(linuxBin, "certloom-agent"), "dist/linux/certloom-agent")
 
-	args := []string{"run", "--rm", "-v", stage + ":/src", "-w", "/src", "-e", "VERSION=0.0.0-e2e", "-e", "GOARCH=" + runtime.GOARCH}
+	args := []string{"run", "--rm", "-v", stage + ":/src", "-w", "/src", "-e", "VERSION=" + e2eVersion, "-e", "GOARCH=" + runtime.GOARCH}
 	if uid := os.Getuid(); uid >= 0 {
 		args = append(args, "--user", strconv.Itoa(uid)+":"+strconv.Itoa(os.Getgid()))
 	}
@@ -165,6 +165,10 @@ func TestSystemdPackageRenewal(t *testing.T) {
 		o, err := s.cli("agent", "list")
 		return err == nil && strings.Contains(o, "active") && strings.Contains(o, "www")
 	})
+	// The heartbeat must carry the version stamped into the binary, not the source default.
+	if o, _ := s.cli("agent", "list"); !strings.Contains(o, e2eVersion) {
+		t.Fatalf("agent list does not show version %s:\n%s", e2eVersion, o)
+	}
 
 	// --- the sandbox is in effect for the running agent ---
 	agentPID := unitProp("certloom-agent", "MainPID")

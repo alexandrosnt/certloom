@@ -26,6 +26,7 @@ import (
 	"github.com/alexandrosnt/certloom/internal/agentpki"
 	"github.com/alexandrosnt/certloom/internal/agentproto"
 	"github.com/alexandrosnt/certloom/internal/app"
+	"github.com/alexandrosnt/certloom/internal/ari"
 	"github.com/alexandrosnt/certloom/internal/authz"
 	"github.com/alexandrosnt/certloom/internal/certparse"
 	"github.com/alexandrosnt/certloom/internal/jobs"
@@ -560,5 +561,58 @@ func TestInvalidWindowRejected(t *testing.T) {
 	}
 	if _, err := e.svc.SetDeploymentWindow(ctx, e.owner, e.dep.ID, "", "sometimes"); err == nil {
 		t.Fatal("unknown emergency mode accepted")
+	}
+}
+
+// blockingTransport holds every request until release is closed, then fails it.
+type blockingTransport struct{ started, release chan struct{} }
+
+func (b *blockingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	select {
+	case b.started <- struct{}{}:
+	default:
+	}
+	<-b.release
+	return nil, errors.New("acme directory unavailable")
+}
+
+// An ARI check that started before a renewal finished must not overwrite the
+// schedule the renewal set for its new certificate.
+func TestARICheckDoesNotOverwriteNewerCertificate(t *testing.T) {
+	e := newEnv(t)
+	bt := &blockingTransport{started: make(chan struct{}, 1), release: make(chan struct{})}
+	e.svc.ARI = &ari.Client{HTTP: &http.Client{Transport: bt}}
+
+	if _, err := e.svc.ScheduleRenewals(ctx); err != nil {
+		t.Fatal(err)
+	}
+	q := &jobs.Queue{Pool: e.db.Pool, WorkerID: "test"}
+	js, err := q.Claim(ctx, []string{app.JobKindARICheck}, 1)
+	if err != nil || len(js) != 1 {
+		t.Fatalf("claim ari check: %v %d", err, len(js))
+	}
+	done := make(chan error, 1)
+	go func() { done <- e.svc.RunARICheck(ctx, js[0]) }()
+	<-bt.started // the check has read the old certificate and is asking the CA
+
+	run, err := e.svc.RequestRenewal(ctx, e.owner, e.dep.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := e.pump(run.ID); r.State != store.RunVerified {
+		t.Fatalf("renewal: %s %q", r.State, r.Error)
+	}
+	close(bt.release)
+	if err := <-done; err != nil {
+		t.Fatalf("ari check: %v", err)
+	}
+
+	ds, _ := e.svc.ListDeployments(ctx, e.owner)
+	d := ds[0]
+	if !strings.Contains(d.RenewReason, "until ARI is checked") {
+		t.Fatalf("stale ARI result overwrote the new certificate's schedule: %q", d.RenewReason)
+	}
+	if d.ARINextAt == nil || d.ARINextAt.After(time.Now()) {
+		t.Fatalf("a fresh ARI check should still be due, next check %v", d.ARINextAt)
 	}
 }

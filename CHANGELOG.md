@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- Tested against Let's Encrypt staging: issuance, renewal with `replaces`, ARI
+  scheduling and rollback on a real host.
 - Maintenance windows per deployment (`certloom deployment set-window`, e.g.
   "Mon-Fri 02:00-05:00 Europe/Athens"). Activation waits for the window; if no
   window starts before the current certificate gets too close to expiry the run is
@@ -25,6 +27,13 @@
 - Docker image and a Compose setup with a tested backup/restore procedure.
 
 ### Fixed
+- An ARI check that was still running when a renewal finished could overwrite the new
+  certificate's schedule with the old certificate's, delaying the next ARI check by a day.
+- Agents reported `0.0.0-dev` as their version instead of the version they were built with.
+- Renewing a certificate from another CA (or from Let's Encrypt staging) failed every
+  attempt, because the CA refused the `replaces` hint. When an order is refused as
+  `malformed`, `unauthorized` or `alreadyReplaced`, the agent now logs it and orders once
+  more without the hint.
 - Session cookies are marked Secure from a server setting instead of per request, so
   they stay Secure behind a TLS-terminating proxy (`CERTLOOM_SECURE_COOKIES=true`).
 - Audit export to a file reports errors from closing the file.

@@ -143,6 +143,7 @@ systemctl restart certloom-agent
 certloom issuer create le-staging --directory https://acme-staging-v02.api.letsencrypt.org/directory --agree-tos
 certloom scope create web --allow-host '*.example.com'
 certloom endpoint add www.example.com --scope web            # used for external verification
+certloom lineage create www                                    # skip if it exists, e.g. from `inventory import --lineage`
 certloom deployment create --lineage www --agent web-01 --target www --issuer le-staging \
     --endpoint <endpoint-id> --san www.example.com
 certloom deployment renew <deployment-id>

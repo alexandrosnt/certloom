@@ -33,6 +33,9 @@ const (
 
 var linuxBin, hostBin string
 
+// e2eVersion is stamped into the Linux binaries the same way deploy/packaging/build.sh does.
+const e2eVersion = "0.0.0-e2e"
+
 func TestMain(m *testing.M) {
 	if os.Getenv("CERTLOOM_ACME_E2E") == "" {
 		fmt.Println("skipping ACME e2e: set CERTLOOM_ACME_E2E=1")
@@ -41,7 +44,8 @@ func TestMain(m *testing.M) {
 	root, _ := filepath.Abs("../..")
 	linuxBin, _ = os.MkdirTemp("", "certloom-acme-linux")
 	hostBin, _ = os.MkdirTemp("", "certloom-acme-host")
-	b := exec.Command("go", "build", "-o", linuxBin+"/", "./cmd/certloomd", "./cmd/certloom-agent")
+	b := exec.Command("go", "build", "-ldflags", "-X github.com/alexandrosnt/certloom/internal/version.Version="+e2eVersion,
+		"-o", linuxBin+"/", "./cmd/certloomd", "./cmd/certloom-agent")
 	b.Dir, b.Env = root, append(os.Environ(), "GOOS=linux", "GOARCH="+runtime.GOARCH, "CGO_ENABLED=0")
 	if out, err := b.CombinedOutput(); err != nil {
 		fmt.Printf("linux build: %v\n%s", err, out)
@@ -198,6 +202,11 @@ func (s *stack) logs() {
 		}
 		out, _ := tryDocker(append([]string{"exec", s.nginx}, cmd...)...)
 		s.t.Logf("---- agent log ----\n%s", out)
+	}
+	if s.certloomd != "" {
+		deps, _ := s.cli("deployment", "list")
+		runs, _ := s.cli("run", "list")
+		s.t.Logf("---- deployments ----\n%s\n---- runs ----\n%s", deps, runs)
 	}
 }
 

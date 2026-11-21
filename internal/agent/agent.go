@@ -27,10 +27,8 @@ import (
 	"time"
 
 	"github.com/alexandrosnt/certloom/internal/agentproto"
+	"github.com/alexandrosnt/certloom/internal/version"
 )
-
-// Version is reported in heartbeats.
-var Version = "0.0.0-dev"
 
 // identity is persisted under state_dir after enrollment.
 type identity struct {
@@ -254,7 +252,7 @@ func (a *Agent) do(ctx context.Context, method, path string, in, out any) error 
 // Heartbeat reports liveness and targets.
 func (a *Agent) Heartbeat(ctx context.Context) error {
 	host, _ := os.Hostname()
-	hb := agentproto.Heartbeat{Version: Version, Hostname: host}
+	hb := agentproto.Heartbeat{Version: version.Version, Hostname: host}
 	for _, t := range a.cfg.Targets {
 		hb.Targets = append(hb.Targets, agentproto.Target{Name: t.Name, Type: t.Type, AllowedSANs: t.AllowedSANs, ACME: t.Webroot != ""})
 	}

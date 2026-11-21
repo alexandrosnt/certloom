@@ -7,14 +7,15 @@ Capability vocabulary: `discover`, `read_metadata`, `request`, `renew`, `revoke`
 `export_certificate`, `export_private_key`, `import`, `deploy`, `bind`, `activate`,
 `verify`, `rollback`, `manage_trust_bundle`, `health_check`.
 
-## Test status (2026-11-20)
+## Test status (2026-11-21)
 
 - **M1 rows:** supported, covered by the unit, store and e2e tests.
 - **M2 rows** (Linux agent discovery, Certbot discovery, ACME via lego v5, Nginx target): supported for the claimed capabilities, with these limits:
   - Tested against **Pebble** in `test/acme`, running a real HTTP-01 challenge, the real Nginx 1.29 Alpine image and the real `certloom-agent`.
-  - **Let's Encrypt staging has not been exercised.** It needs a publicly reachable hostname. Do that before claiming production Let's Encrypt support.
+  - **Let's Encrypt staging** exercised by hand on 2026-11-21 (Debian 13, nginx 1.26.3 under systemd, PostgreSQL 17, packaged agent): first issuance over HTTP-01, renewal with `replaces`, ARI window used for the next renewal, and a forced `nginx -t` failure that rolled back while the old certificate stayed live. Staging accepted a second order that `replaces` the same certificate once the earlier replacing order had finished; Pebble rejects that with `alreadyReplaced`, and the agent handles both.
+  - **Let's Encrypt production**: one issuance on the same host (2026-11-21), switched over from a staging certificate; trusted chain ISRG Root X2 / YE1.
   - Wildcard SANs are refused (HTTP-01 only).
-  - Tested on Nginx 1.29 (Alpine). The systemd reload path (`systemctl reload nginx`) is not tested.
+  - Tested on Nginx 1.29 (Alpine) in CI and on Nginx 1.26 with `systemctl reload nginx` (packaged agent e2e on Debian 13, plus the staging run).
 
 ## Committed scope
 

@@ -41,7 +41,7 @@ Linux, macOS and Windows on amd64/arm64: builds are tested; e2e tests run on Lin
 | Server | Status |
 |---|---|
 | Pebble v2.10.x | Tested in CI (M2) |
-| Let's Encrypt staging | Manually tested before each release (M2) |
+| Let's Encrypt staging | Manually tested before each release (M2); last run 2026-11-21 |
 | Let's Encrypt production | Supported once the staging tests pass |
 | Other ACME CAs | Not claimed until tested |
 

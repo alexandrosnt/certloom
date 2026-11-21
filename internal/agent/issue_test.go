@@ -25,3 +25,24 @@ func TestIssueFailure(t *testing.T) {
 		t.Fatalf("plain error should carry no output, got %#v", out)
 	}
 }
+
+func TestReplacesRejected(t *testing.T) {
+	pd := func(typ string) *acme.ProblemDetails { return &acme.ProblemDetails{Type: typ} }
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"already replaced", fmt.Errorf("obtain: %w", &acme.AlreadyReplacedError{ProblemDetails: pd(acme.AlreadyReplacedErrorType)}), true},
+		// Let's Encrypt production for a predecessor from staging or another CA.
+		{"unknown issuer", fmt.Errorf("obtain: %w", pd(acme.MalformedErrorType)), true},
+		{"other account", pd(acme.UnauthorizedErrorType), true},
+		{"rate limited", &acme.RateLimitedError{ProblemDetails: pd(acme.RateLimitedErrorType)}, false},
+		{"caa", pd(acme.CaaErrorType), false},
+		{"network", errors.New("connection refused"), false},
+	} {
+		if got := replacesRejected(tc.err); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

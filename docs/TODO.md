@@ -3,10 +3,15 @@
 Not done yet, roughly in the order I want to tackle it.
 
 ## Renewal
-- Try a real run against Let's Encrypt staging (needs a public hostname).
+- No command to change a deployment's issuer (e.g. staging to production); today it
+  means recreating the deployment.
 - DNS-01, EAB, wildcards (M3).
 
 ## Control plane
+- systemd unit and a non-Docker install guide for `certloomd`. With a distro PostgreSQL
+  the owner role needs `CREATEROLE` (PG 16+), because the first migration creates
+  `certloom_app`.
+- `test/acme` pulls `pebble:latest`; pin it.
 - UI pages for members, policy and channels (CLI only for now).
 - `certloom schedule preview` (next renewal and window times with reasons).
 - Rate limits are per process.
@@ -22,7 +27,6 @@ Not done yet, roughly in the order I want to tackle it.
 - No wildcard certificates until DNS-01.
 
 ## Open questions
-- Project name / module path (`github.com/alexandrosnt/certloom` is a placeholder).
 - Where to publish images and packages.
 - What "medium install" means for load tests.
 

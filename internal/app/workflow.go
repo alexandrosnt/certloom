@@ -320,6 +320,7 @@ func (s *Service) RunARICheck(ctx context.Context, j jobs.Job) error {
 		return err
 	}
 	var cert *x509.Certificate
+	var checked *string // lineage certificate this check is for
 	var dirURL string
 	err := s.DB.WithOrg(ctx, j.OrgID, func(tx *store.Tx) error {
 		d, err := tx.GetDeployment(ctx, pl.DeploymentID, false)
@@ -335,6 +336,7 @@ func (s *Service) RunARICheck(ctx context.Context, j jobs.Job) error {
 			return err
 		}
 		dirURL = iss.DirectoryURL
+		checked = l.CurrentSHA256
 		if l.CurrentSHA256 != nil {
 			c, err := tx.GetCertificate(ctx, *l.CurrentSHA256)
 			if err != nil {
@@ -379,11 +381,31 @@ func (s *Service) RunARICheck(ctx context.Context, j jobs.Job) error {
 		if err := jobs.Fence(ctx, tx, j); err != nil {
 			return err
 		}
+		// A renewal may have finished while the CA was asked. Its verify step
+		// already made a new check due; never overwrite that with this result.
+		d, err := tx.GetDeployment(ctx, pl.DeploymentID, true)
+		if err != nil {
+			return err
+		}
+		l, err := tx.LineageByRef(ctx, d.LineageID)
+		if err != nil {
+			return err
+		}
+		if !sameSHA(l.CurrentSHA256, checked) {
+			return jobs.Complete(ctx, tx, j)
+		}
 		if err := tx.SetRenewal(ctx, pl.DeploymentID, at, reason, &next); err != nil {
 			return err
 		}
 		return jobs.Complete(ctx, tx, j)
 	})
+}
+
+func sameSHA(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func truncate(s string, n int) string {

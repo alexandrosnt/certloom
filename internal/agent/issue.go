@@ -115,10 +115,9 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 	}
 	req := certificate.ObtainForCSRRequest{CSR: csr, Bundle: true, Profile: p.Profile, ReplacesCertID: p.ReplacesCertID}
 	res, err := client.Certificate.ObtainForCSR(ctx, req)
-	var replaced *acme.AlreadyReplacedError
-	if err != nil && req.ReplacesCertID != "" && errors.As(err, &replaced) {
-		// An earlier order (e.g. one that was later rolled back) already
-		// claimed the predecessor. Order again without the replaces hint.
+	if err != nil && req.ReplacesCertID != "" && replacesRejected(err) {
+		a.log.Warn("order with replaces was refused; ordering without it",
+			"target", tgt.Name, "run", p.RunID, "replaces", req.ReplacesCertID, "error", err)
 		req.ReplacesCertID = ""
 		res, err = client.Certificate.ObtainForCSR(ctx, req)
 	}
@@ -214,4 +213,21 @@ func (a *Agent) acmeClient(ctx context.Context, p agentproto.IssuePayload) (*leg
 		}
 	}
 	return client, nil
+}
+
+// replacesRejected reports whether an order may have been refused because of
+// its RFC 9773 "replaces" hint: the predecessor was already replaced (e.g. by
+// an order that was later rolled back), comes from another CA or the staging
+// environment, or was issued to a different account. The hint is optional, so
+// such an order is placed once more without it.
+func replacesRejected(err error) bool {
+	var pd *acme.ProblemDetails
+	if !errors.As(err, &pd) {
+		return false
+	}
+	switch pd.Type {
+	case acme.AlreadyReplacedErrorType, acme.MalformedErrorType, acme.UnauthorizedErrorType:
+		return true
+	}
+	return false
 }
