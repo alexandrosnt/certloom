@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -114,6 +115,19 @@ type Spec struct {
 		// renewals blocked on approval; empty = all enabled channels.
 		Channels []string `json:"channels,omitempty"`
 	} `json:"approvals,omitempty"`
+	Alerts struct {
+		// AckExpiry: an acknowledged alert opens again after this long if its
+		// finding is still there. Acknowledging records that someone saw it;
+		// accepting the risk is what exceptions are for.
+		AckExpiry Duration `json:"ackExpiry,omitempty"`
+	} `json:"alerts,omitempty"`
+	Exceptions struct {
+		// MaxDuration caps how long an approved exception may last.
+		MaxDuration Duration `json:"maxDuration,omitempty"`
+		// ProhibitedChecks may never be accepted as a risk, e.g. checks that mean
+		// a key is compromised. Adding a check here ends active exceptions for it.
+		ProhibitedChecks []string `json:"prohibitedChecks,omitempty"`
+	} `json:"exceptions,omitempty"`
 }
 
 // Defaults.
@@ -135,6 +149,8 @@ func Default() *Document {
 	d.Spec.Retention.Observations = Duration(DefaultObservationRetention)
 	d.Spec.Approvals.Deployments = ApprovalOptional
 	d.Spec.Approvals.ExpireAfter = Duration(7 * 24 * time.Hour)
+	d.Spec.Exceptions.MaxDuration = Duration(90 * 24 * time.Hour)
+	d.Spec.Alerts.AckExpiry = Duration(7 * 24 * time.Hour)
 	return d
 }
 
@@ -188,6 +204,12 @@ func (d *Document) fill() {
 	if s.Approvals.ExpireAfter == 0 {
 		s.Approvals.ExpireAfter = def.Spec.Approvals.ExpireAfter
 	}
+	if s.Exceptions.MaxDuration == 0 {
+		s.Exceptions.MaxDuration = def.Spec.Exceptions.MaxDuration
+	}
+	if s.Alerts.AckExpiry == 0 {
+		s.Alerts.AckExpiry = def.Spec.Alerts.AckExpiry
+	}
 }
 
 // ValidationError lists every problem found.
@@ -240,6 +262,17 @@ func (d *Document) Validate() error {
 	if e := time.Duration(s.Approvals.ExpireAfter); e < time.Hour || e > 30*24*time.Hour {
 		add("approvals.expireAfter must be between 1h and 30d")
 	}
+	if m := time.Duration(s.Exceptions.MaxDuration); m < 24*time.Hour || m > 365*24*time.Hour {
+		add("exceptions.maxDuration must be between 1d and 365d")
+	}
+	for _, c := range s.Exceptions.ProhibitedChecks {
+		if !checks.KnownCheck(c) {
+			add("exceptions.prohibitedChecks: unknown check %q", c)
+		}
+	}
+	if a := time.Duration(s.Alerts.AckExpiry); a < time.Hour || a > 30*24*time.Hour {
+		add("alerts.ackExpiry must be between 1h and 30d")
+	}
 	if len(p) > 0 {
 		return &ValidationError{Problems: p}
 	}
@@ -264,4 +297,10 @@ func (d *Document) YAML() ([]byte, error) {
 		return nil, err
 	}
 	return yaml.JSONToYAML(j)
+}
+
+// ExceptionProhibited reports whether the policy forbids accepting the risk
+// of this check.
+func (d *Document) ExceptionProhibited(check string) bool {
+	return slices.Contains(d.Spec.Exceptions.ProhibitedChecks, check)
 }

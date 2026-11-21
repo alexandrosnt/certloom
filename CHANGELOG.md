@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Added
+- Policy exceptions (ADR-0016): time-bound, approved acceptance of one condition (check,
+  check version and fingerprint) on one subject at its current severity, with risk owner,
+  rationale, compensating controls, optional remediation plan and the finding as
+  evidence. The alert is suppressed while the finding stays visible and counted;
+  alerting returns at once on expiry, revocation, escalation or a changed condition.
+  Policy `exceptions.maxDuration` (default 90d) and `exceptions.prohibitedChecks`;
+  `certloom exception request|list|show|revoke`.
+- Acknowledgements lapse after policy `alerts.ackExpiry` (default 7d) and the alert
+  opens again; acknowledging never hides a finding.
+- Findings record their check version and a fingerprint of the condition.
 - Approvals with separation of duties (ADR-0015): roles `requester`, `approver`,
   `deployment_operator` and `issuer_admin`; policy `approvals.deployments: required`,
   `approvals.expireAfter` and `approvals.channels`; `certloom approval

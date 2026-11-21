@@ -137,14 +137,17 @@ func scanApproval(r pgx.Row) (*Approval, error) {
 	return a, notFound(err)
 }
 
-// CreateApproval opens a request for a deployment spec. Only one request per
-// deployment can be open (ErrConflict otherwise).
-func (tx *Tx) CreateApproval(ctx context.Context, deploymentID string, spec DeploymentSpec, requestedBy string, ttl time.Duration) (*Approval, error) {
+// Spec is something an approval can cover: a stable JSON encoding and its digest.
+type Spec interface{ SHA256() string }
+
+// CreateApproval opens a request for a spec. Only one request per resource
+// can be open (ErrConflict otherwise).
+func (tx *Tx) CreateApproval(ctx context.Context, resourceType, resourceID string, spec Spec, requestedBy string, ttl time.Duration) (*Approval, error) {
 	b, err := json.Marshal(spec)
 	if err != nil {
 		return nil, err
 	}
-	a := &Approval{ID: ids.New("apr"), ResourceType: "deployment", ResourceID: deploymentID, SpecSHA256: spec.SHA256(), Spec: b,
+	a := &Approval{ID: ids.New("apr"), ResourceType: resourceType, ResourceID: resourceID, SpecSHA256: spec.SHA256(), Spec: b,
 		State: ApprovalRequested, RequestedBy: requestedBy}
 	err = tx.QueryRow(ctx, `INSERT INTO approvals (id, org_id, resource_type, resource_id, spec_sha256, spec, requested_by, expires_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7, now() + $8::interval) RETURNING requested_at, expires_at`,

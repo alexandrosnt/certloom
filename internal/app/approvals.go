@@ -76,7 +76,7 @@ func (s *Service) requestApproval(ctx context.Context, tx *store.Tx, d *store.De
 		return nil, err
 	}
 	d.Approval = "pending"
-	a, err := tx.CreateApproval(ctx, d.ID, spec, actor, time.Duration(pol.Spec.Approvals.ExpireAfter))
+	a, err := tx.CreateApproval(ctx, "deployment", d.ID, spec, actor, time.Duration(pol.Spec.Approvals.ExpireAfter))
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			return nil, fmt.Errorf("%w: deployment already has an open approval request", store.ErrConflict)
@@ -164,50 +164,71 @@ func (s *Service) DecideApproval(ctx context.Context, p authz.Principal, id stri
 		if err := s.checkSeparation(ctx, tx, a.RequestedBy, p.Actor); err != nil {
 			return err
 		}
-		d, err := tx.GetDeployment(ctx, a.ResourceID, true)
+		var subject string
+		switch a.ResourceType {
+		case "deployment":
+			subject, err = s.decideDeployment(ctx, tx, a, approve)
+		case "exception":
+			subject, err = s.decideException(ctx, tx, a, approve, p.Actor)
+		default:
+			err = fmt.Errorf("approval %s has unknown resource type %q", a.ID, a.ResourceType)
+		}
 		if err != nil {
 			return err
 		}
-		spec, err := s.deploymentSpec(ctx, tx, d)
-		if err != nil {
-			return err
+		state, action := store.ApprovalDenied, "approvals.deny"
+		if approve {
+			state, action = store.ApprovalApproved, "approvals.approve"
 		}
-		if approve && spec.SHA256() != a.SpecSHA256 {
-			return fmt.Errorf("%w: the deployment or its issuer or target changed after this request was made; ask for a new request", store.ErrConflict)
+		if err := tx.DecideApproval(ctx, a.ID, state, p.Actor, reason); err != nil {
+			return err
 		}
 		pv, err := tx.ActivePolicy(ctx)
 		if err != nil {
 			return err
 		}
-		state, action, dstate := store.ApprovalDenied, "approvals.deny", "denied"
-		var digest *string
-		if approve {
-			state, action, dstate, digest = store.ApprovalApproved, "approvals.approve", "approved", &a.SpecSHA256
-		}
-		if err := tx.DecideApproval(ctx, a.ID, state, p.Actor, reason); err != nil {
-			return err
-		}
-		if err := tx.SetDeploymentApproval(ctx, d.ID, dstate, digest); err != nil {
-			return err
-		}
-		if approve && d.EndpointID != nil {
-			if err := tx.SetEndpointLineage(ctx, *d.EndpointID, &d.LineageID, nil); err != nil {
-				return err
-			}
-		}
 		now := s.now()
 		a.State, a.DecidedBy, a.DecidedAt, a.Reason = state, &p.Actor, &now, reason
-		msg := fmt.Sprintf("%s %s request %s for deployment %s", p.Actor, state, a.ID, d.ID)
+		msg := fmt.Sprintf("%s %s request %s for %s", p.Actor, state, a.ID, subject)
 		if reason != "" {
 			msg += ": " + reason
 		}
-		if err := s.notifyApproval(ctx, tx, pv.Document, d, "approval."+state, a.ID+":"+state, msg); err != nil {
+		n := store.Notification{Event: "approval." + state, OrgID: tx.OrgID, SubjectType: a.ResourceType, SubjectID: a.ResourceID,
+			Subject: subject, Severity: "warning", Message: msg, At: now.UTC()}
+		if err := tx.EnqueueNotificationTo(ctx, n, a.ID+":"+state, pv.Document.Spec.Approvals.Channels); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, p, action, "approval", a.ID, map[string]any{"deployment": d.ID, "spec_sha256": a.SpecSHA256,
+		return s.audit(ctx, tx, p, action, "approval", a.ID, map[string]any{a.ResourceType: a.ResourceID, "spec_sha256": a.SpecSHA256,
 			"requested_by": a.RequestedBy, "reason": reason})
 	})
 	return a, err
+}
+
+// decideDeployment applies an approval decision to the deployment it covers.
+func (s *Service) decideDeployment(ctx context.Context, tx *store.Tx, a *store.Approval, approve bool) (string, error) {
+	d, err := tx.GetDeployment(ctx, a.ResourceID, true)
+	if err != nil {
+		return "", err
+	}
+	if !approve {
+		return "deployment " + d.ID, tx.SetDeploymentApproval(ctx, d.ID, store.ApprovalDenied, nil)
+	}
+	spec, err := s.deploymentSpec(ctx, tx, d)
+	if err != nil {
+		return "", err
+	}
+	if spec.SHA256() != a.SpecSHA256 {
+		return "", fmt.Errorf("%w: the deployment or its issuer or target changed after this request was made; ask for a new request", store.ErrConflict)
+	}
+	if err := tx.SetDeploymentApproval(ctx, d.ID, store.ApprovalApproved, &a.SpecSHA256); err != nil {
+		return "", err
+	}
+	if d.EndpointID != nil {
+		if err := tx.SetEndpointLineage(ctx, *d.EndpointID, &d.LineageID, nil); err != nil {
+			return "", err
+		}
+	}
+	return "deployment " + d.ID, nil
 }
 
 // RevokeDeploymentApproval withdraws a deployment's approval. Runs that have

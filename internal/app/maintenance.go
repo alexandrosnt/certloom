@@ -97,6 +97,9 @@ func (s *Service) ApplyPolicy(ctx context.Context, p authz.Principal, src []byte
 			return err
 		}
 		plan.Applied = true
+		if err := s.endProhibitedExceptions(ctx, tx, doc, fmt.Sprintf("policy version %d prohibits exceptions for this check", plan.Version)); err != nil {
+			return err
+		}
 		return s.audit(ctx, tx, p, "policy.apply", "policy", fmt.Sprint(plan.Version), map[string]any{
 			"version": plan.Version, "previous_version": cur.Version, "certificates_affected": len(plan.Changes)})
 	})
@@ -145,11 +148,29 @@ func (s *Service) EscalateAlerts(ctx context.Context) (int, error) {
 			if err != nil {
 				return err
 			}
+			now := s.now()
+			// Acknowledging is not accepting the risk: an acked alert whose
+			// finding is still open comes back, even with escalation off.
+			ackFor := time.Duration(pv.Document.Spec.Alerts.AckExpiry)
+			alertIDs, findingIDs, err := tx.ExpireAcks(ctx, ackFor)
+			if err != nil {
+				return err
+			}
+			for i, fid := range findingIDs {
+				f, err := tx.GetFinding(ctx, fid)
+				if err != nil {
+					return err
+				}
+				n := notificationFor(org, "alert.ack_expired", f.SubjectType+" "+f.SubjectID, *f, now)
+				n.Message = fmt.Sprintf("Acknowledged over %s ago and still open: %s", policy.FormatDuration(ackFor), f.Message)
+				if err := tx.EnqueueNotification(ctx, n, alertIDs[i]+":ackexp:"+now.UTC().Format(time.RFC3339)); err != nil {
+					return err
+				}
+			}
 			after := time.Duration(pv.Document.Spec.Escalation.After)
 			if after == 0 {
 				return nil
 			}
-			now := s.now()
 			rows, err := tx.Query(ctx, `UPDATE alerts a SET escalation_level = a.escalation_level + 1, last_escalated_at = $1
 				WHERE a.state = 'open' AND a.created_at <= $2 AND (a.last_escalated_at IS NULL OR a.last_escalated_at <= $2)
 				RETURNING a.id, a.finding_id, a.escalation_level`, now, now.Add(-after))

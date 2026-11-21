@@ -89,6 +89,13 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 		}
 		return err
 	})
+	loop("exceptions", time.Minute, func(ctx context.Context) error {
+		n, err := svc.SweepExceptions(ctx)
+		if n > 0 {
+			log.Info("policy exceptions ended", "count", n)
+		}
+		return err
+	})
 	loop("prune", time.Hour, func(ctx context.Context) error {
 		r, err := svc.Prune(ctx)
 		if r.Observations+r.IdempotencyKeys+r.Sessions > 0 {

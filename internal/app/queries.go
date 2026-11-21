@@ -105,8 +105,13 @@ func (s *Service) Overview(ctx context.Context, p authz.Principal) ([]Metric, er
 				"Enabled endpoints that have not completed a probe yet.", "/endpoints"},
 			{"unowned_lineages", "Lineages without an owning team", q(`SELECT count(*) FROM lineages WHERE team_id IS NULL`), lins,
 				"Lineages with no team assigned; nobody is responsible for renewing them.", "/lineages"},
-			{"open_alerts", "Open alerts", q(`SELECT count(*) FROM alerts WHERE state = 'open'`), q(`SELECT count(*) FROM alerts WHERE state IN ('open','acked')`),
-				"Alerts not yet acknowledged, out of all unresolved alerts.", "/alerts"},
+			{"open_alerts", "Open alerts", q(`SELECT count(*) FROM alerts a WHERE ` + store.EffectiveAlertState + ` = 'open'`),
+				q(`SELECT count(*) FROM alerts a WHERE ` + store.EffectiveAlertState + ` <> 'resolved'`),
+				"Alerts not yet acknowledged, out of all unresolved alerts (acknowledged and accepted-risk alerts included).", "/alerts"},
+			{"accepted_risk", "Findings under an approved exception", q(`SELECT count(*) FROM findings f WHERE f.resolved_at IS NULL AND EXISTS (
+				SELECT 1 FROM policy_exceptions e WHERE ` + store.ExceptionCoversFinding + `)`),
+				q(`SELECT count(*) FROM findings WHERE resolved_at IS NULL AND severity <> 'info'`),
+				"Open warning or critical findings whose alert an active, approved exception suppresses, out of all open warning or critical findings. They stay in every other count.", "/exceptions"},
 		}
 		return nil
 	})

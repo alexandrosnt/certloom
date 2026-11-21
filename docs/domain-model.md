@@ -101,8 +101,15 @@ failure paths:
 
 ### Alert
 
-`open -> acked -> resolved`; `open -> suppressed (maintenance/exception, expires) -> open`.
+`open -> acked -> resolved`; `acked -> open` after `alerts.ackExpiry`; `open -> suppressed (approved
+exception only, while it covers the finding) -> open`.
 An alert resolves automatically when its finding has been resolved for one full probe interval.
+
+### PolicyException (M3)
+
+`requested -> active | denied | expired`; `active -> expired | revoked`. One live exception per
+subject and check (ADR-0016). It covers one condition (check version + fingerprint) and
+never hides the finding.
 
 ### Approval (M3)
 

@@ -516,7 +516,7 @@ func (s *Service) RunProbeJob(ctx context.Context, j jobs.Job) error {
 func notifySync(ctx context.Context, tx *store.Tx, label string, res *store.SyncResult, now time.Time) error {
 	send := func(event, dedupeSuffix string, fs []store.Finding) error {
 		for _, f := range fs {
-			if f.Severity == string(checks.Info) {
+			if f.Severity == string(checks.Info) || f.ExceptionID != nil {
 				continue
 			}
 			if err := tx.EnqueueNotification(ctx, notificationFor(tx.OrgID, event, label, f, now), f.ID+":"+dedupeSuffix+f.Severity); err != nil {
@@ -529,6 +529,9 @@ func notifySync(ctx context.Context, tx *store.Tx, label string, res *store.Sync
 		return err
 	}
 	if err := send("finding.escalated", "esc:", res.Escalated); err != nil {
+		return err
+	}
+	if err := send("finding.reopened", "reopened:"+now.UTC().Format(time.RFC3339)+":", res.Reopened); err != nil {
 		return err
 	}
 	return send("finding.resolved", "resolved:", res.Resolved)

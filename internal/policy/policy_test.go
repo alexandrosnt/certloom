@@ -71,3 +71,19 @@ func TestApprovalsSettings(t *testing.T) {
 		t.Fatalf("required: %+v %v", d.Spec.Approvals, err)
 	}
 }
+
+func TestExceptionAndAckSettings(t *testing.T) {
+	d, err := Parse([]byte("apiVersion: certloom/v1\nkind: MonitoringPolicy\nspec: {}\n"))
+	if err != nil || time.Duration(d.Spec.Exceptions.MaxDuration) != 90*24*time.Hour || time.Duration(d.Spec.Alerts.AckExpiry) != 7*24*time.Hour {
+		t.Fatalf("defaults: %+v %+v %v", d.Spec.Exceptions, d.Spec.Alerts, err)
+	}
+	for _, bad := range []string{"exceptions: {maxDuration: 366d}", "exceptions: {prohibitedChecks: [nope]}", "alerts: {ackExpiry: 31d}", "alerts: {ackExpiry: 10m}"} {
+		if _, err := Parse([]byte("apiVersion: certloom/v1\nkind: MonitoringPolicy\nspec:\n  " + bad + "\n")); err == nil {
+			t.Errorf("%s accepted", bad)
+		}
+	}
+	d, err = Parse([]byte("apiVersion: certloom/v1\nkind: MonitoringPolicy\nspec:\n  exceptions: {maxDuration: 365d, prohibitedChecks: [weak_key]}\n"))
+	if err != nil || !d.ExceptionProhibited("weak_key") || d.ExceptionProhibited("expiry") {
+		t.Fatalf("prohibited: %v", err)
+	}
+}

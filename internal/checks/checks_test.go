@@ -158,3 +158,30 @@ func TestEndpoint(t *testing.T) {
 		}
 	})
 }
+
+// Every finding names its condition: the same certificate gives the same
+// fingerprint, another certificate with the same weakness a different one.
+func TestFingerprints(t *testing.T) {
+	root := testpki.Issue(t, nil, testpki.Options{CommonName: "rsa root", IsCA: true, RSABits: 2048})
+	a := parsed(t, testpki.Issue(t, root, testpki.Options{CommonName: "a", RSABits: 1024}))
+	b := parsed(t, testpki.Issue(t, root, testpki.Options{CommonName: "b", RSABits: 1024}))
+	now := time.Now()
+	fa, fa2, fb := Certificate(a, now, Policy{}), Certificate(a, now, Policy{}), Certificate(b, now, Policy{})
+	if len(fa) == 0 {
+		t.Fatal("want a weak_key finding")
+	}
+	for i, f := range fa {
+		if f.Fingerprint == "" || f.Fingerprint != fa2[i].Fingerprint {
+			t.Fatalf("fingerprint not stable: %+v", f)
+		}
+		if f.Fingerprint == fb[i].Fingerprint {
+			t.Fatalf("two certificates share a fingerprint for %s", f.Check)
+		}
+	}
+	for _, id := range []string{CheckExpiry, CheckNotYetValid, CheckHostnameMismatch, CheckChainIncomplete, CheckUntrusted, CheckWeakKey,
+		CheckWeakSignature, CheckFingerprintChanged, CheckLineageMismatch, CheckProbeFailed} {
+		if !KnownCheck(id) || Version(id) < 1 {
+			t.Errorf("check %s has no version", id)
+		}
+	}
+}

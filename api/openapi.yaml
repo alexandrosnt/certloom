@@ -690,6 +690,70 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/exceptions:
+    get:
+      tags: [approvals]
+      summary: Policy exceptions, newest first
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [requested, active, denied, expired, revoked] } }
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+        "400": { $ref: "#/components/responses/Problem" }
+    post:
+      tags: [approvals]
+      summary: Request a time-bound exception for one open finding (one condition on one subject, accepted at its current severity); it needs someone else's approval and is refused for checks in policy exceptions.prohibitedChecks
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject_type, subject_id, check, rationale, risk_owner, expires_at]
+              properties:
+                subject_type: { type: string, enum: [certificate, endpoint, lineage] }
+                subject_id: { type: string }
+                check: { type: string }
+                rationale: { type: string, maxLength: 2000 }
+                compensating_controls: { type: string, maxLength: 2000 }
+                risk_owner: { type: string, maxLength: 200, description: Person accountable for the accepted risk }
+                remediation_owner: { type: string, maxLength: 200 }
+                remediation_due: { type: string, format: date }
+                tracking_ref: { type: string, maxLength: 200, description: Ticket or change reference for the fix }
+                expires_at: { type: string, format: date-time, description: "At most policy exceptions.maxDuration (default 90d) from now" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/exceptions/{id}:
+    get:
+      tags: [approvals]
+      summary: One policy exception
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/exceptions/{id}/revoke:
+    post:
+      tags: [approvals]
+      summary: End an exception early (approvals:decide); its alerts open again
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /api/v1/approvals:
     get:
       tags: [approvals]

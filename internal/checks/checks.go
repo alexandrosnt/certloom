@@ -3,7 +3,9 @@
 package checks
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -49,6 +51,9 @@ const (
 	CheckProbeFailed        = "probe_failed"
 )
 
+// KnownCheck reports whether id is one of the check identifiers above.
+func KnownCheck(id string) bool { return checkVersions[id] > 0 }
+
 // Finding is one check result.
 type Finding struct {
 	Check    string   `json:"check"`
@@ -56,6 +61,37 @@ type Finding struct {
 	Message  string   `json:"message"`
 	// Remediation is a short, actionable hint for the owner.
 	Remediation string `json:"remediation,omitempty"`
+	// Fingerprint identifies the condition behind the finding (which
+	// certificate, which failure), so an exception accepted for one condition
+	// does not cover a different one under the same check.
+	Fingerprint string `json:"fingerprint"`
+}
+
+func mk(check string, sev Severity, msg, remediation string) Finding {
+	return Finding{Check: check, Severity: sev, Message: msg, Remediation: remediation}
+}
+
+// checkVersions holds each check's definition version. Bump a version when
+// a check starts to mean something different: fingerprints change with it,
+// so existing exceptions stop covering the new meaning.
+var checkVersions = map[string]int{
+	CheckExpiry: 1, CheckNotYetValid: 1, CheckHostnameMismatch: 1, CheckChainIncomplete: 1, CheckUntrusted: 1, CheckWeakKey: 1,
+	CheckWeakSignature: 1, CheckFingerprintChanged: 1, CheckLineageMismatch: 1, CheckProbeFailed: 1,
+}
+
+// Version returns a check's definition version (0 for unknown checks).
+func Version(check string) int { return checkVersions[check] }
+
+// fingerprint hashes the check, its version and the facts that define the
+// condition.
+func fingerprint(check string, facts ...string) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s/%d", check, Version(check))
+	for _, f := range facts {
+		h.Write([]byte{0})
+		h.Write([]byte(f))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Policy holds tunable thresholds. Zero values select defaults.
@@ -107,45 +143,49 @@ func Certificate(c *certparse.Certificate, now time.Time, pol Policy) []Finding 
 	warn, crit := pol.ExpiryThresholds(c.Lifetime())
 	switch {
 	case remaining <= 0:
-		out = append(out, Finding{CheckExpiry, Critical,
+		out = append(out, mk(CheckExpiry, Critical,
 			fmt.Sprintf("expired %s ago (%s)", human(-remaining), c.NotAfter.Format(time.RFC3339)),
-			"Replace the certificate now; clients are rejecting it."})
+			"Replace the certificate now; clients are rejecting it."))
 	case remaining <= crit:
-		out = append(out, Finding{CheckExpiry, Critical,
+		out = append(out, mk(CheckExpiry, Critical,
 			fmt.Sprintf("expires in %s (%s)", human(remaining), c.NotAfter.Format(time.RFC3339)),
-			"Renew immediately and verify the new certificate is served."})
+			"Renew immediately and verify the new certificate is served."))
 	case remaining <= warn:
-		out = append(out, Finding{CheckExpiry, Warning,
+		out = append(out, mk(CheckExpiry, Warning,
 			fmt.Sprintf("expires in %s (%s)", human(remaining), c.NotAfter.Format(time.RFC3339)),
-			"Confirm renewal is scheduled or renew now."})
+			"Confirm renewal is scheduled or renew now."))
 	}
 	if now.Before(c.NotBefore) {
-		out = append(out, Finding{CheckNotYetValid, Critical,
+		out = append(out, mk(CheckNotYetValid, Critical,
 			fmt.Sprintf("not valid until %s", c.NotBefore.Format(time.RFC3339)),
-			"Check the issuing system's clock and the served certificate."})
+			"Check the issuing system's clock and the served certificate."))
 	}
 	switch c.KeyAlgorithm {
 	case "RSA":
 		if c.KeyBits < pol.MinRSABits {
-			out = append(out, Finding{CheckWeakKey, Critical,
+			out = append(out, mk(CheckWeakKey, Critical,
 				fmt.Sprintf("RSA key is %d bits (policy minimum %d)", c.KeyBits, pol.MinRSABits),
-				"Reissue with a stronger key (RSA-2048+ or ECDSA P-256)."})
+				"Reissue with a stronger key (RSA-2048+ or ECDSA P-256)."))
 		}
 	case "ECDSA":
 		if c.KeyBits < pol.MinECDSABits {
-			out = append(out, Finding{CheckWeakKey, Critical,
+			out = append(out, mk(CheckWeakKey, Critical,
 				fmt.Sprintf("ECDSA key is %d bits (policy minimum %d)", c.KeyBits, pol.MinECDSABits),
-				"Reissue with ECDSA P-256 or stronger."})
+				"Reissue with ECDSA P-256 or stronger."))
 		}
 	}
 	// Signature on a self-signed trust anchor is not security-relevant.
 	if !c.SelfSigned {
 		sig := strings.ToUpper(c.SignatureAlgorithm)
 		if strings.Contains(sig, "SHA1") || strings.Contains(sig, "MD5") || strings.Contains(sig, "MD2") {
-			out = append(out, Finding{CheckWeakSignature, Critical,
-				"signed with " + c.SignatureAlgorithm,
-				"Reissue; SHA-1/MD5 signatures are rejected by modern clients."})
+			out = append(out, mk(CheckWeakSignature, Critical,
+				"signed with "+c.SignatureAlgorithm,
+				"Reissue; SHA-1/MD5 signatures are rejected by modern clients."))
 		}
+	}
+	// These conditions are fixed by the certificate itself.
+	for i := range out {
+		out[i].Fingerprint = fingerprint(out[i].Check, c.SHA256)
 	}
 	return out
 }
@@ -176,9 +216,12 @@ func Endpoint(in EndpointInput) []Finding {
 	o := in.Observation
 	if o.ErrorClass != "" {
 		if in.ConsecutiveFailures >= pol.ProbeFailuresToAlert {
-			return []Finding{{CheckProbeFailed, Warning,
+			f := mk(CheckProbeFailed, Warning,
 				fmt.Sprintf("probe failed %d times in a row: %s (%s)", in.ConsecutiveFailures, o.ErrorClass, o.Error),
-				"Check that the endpoint is up and reachable from the prober, and that the scope allows it."}}
+				"Check that the endpoint is up and reachable from the prober, and that the scope allows it.")
+			// A different kind of failure is a different condition.
+			f.Fingerprint = fingerprint(CheckProbeFailed, o.ErrorClass)
+			return []Finding{f}
 		}
 		return nil
 	}
@@ -193,18 +236,18 @@ func Endpoint(in EndpointInput) []Finding {
 	})
 	switch {
 	case vr.Trusted && !vr.ChainComplete:
-		out = append(out, Finding{CheckChainIncomplete, Warning,
+		out = append(out, mk(CheckChainIncomplete, Warning,
 			"server does not send all intermediate certificates",
-			"Configure the full chain (leaf + intermediates) on the server; some clients will fail otherwise."})
+			"Configure the full chain (leaf + intermediates) on the server; some clients will fail otherwise."))
 	case !vr.Trusted && vr.ErrorClass == "unknown_authority":
-		out = append(out, Finding{CheckUntrusted, Critical,
-			"no trusted path to a configured trust anchor: " + vr.Error,
-			"Serve a certificate from a trusted CA, include missing intermediates, or add the private root to the trust store if intended."})
+		out = append(out, mk(CheckUntrusted, Critical,
+			"no trusted path to a configured trust anchor: "+vr.Error,
+			"Serve a certificate from a trusted CA, include missing intermediates, or add the private root to the trust store if intended."))
 	}
 	if vr.HostnameChecked && !vr.HostnameOK {
-		out = append(out, Finding{CheckHostnameMismatch, Critical,
+		out = append(out, mk(CheckHostnameMismatch, Critical,
 			fmt.Sprintf("certificate does not cover %q (SANs: %s)", in.ExpectedName, strings.Join(leaf.DNSNames, ", ")),
-			"Serve a certificate whose SANs include this hostname, or fix the SNI/vhost mapping."})
+			"Serve a certificate whose SANs include this hostname, or fix the SNI/vhost mapping."))
 	}
 	if in.PreviousLeaf != "" && in.PreviousLeaf != leaf.SHA256 {
 		sev := Warning
@@ -212,13 +255,28 @@ func Endpoint(in EndpointInput) []Finding {
 		if in.ExpectedLeaf != "" && in.ExpectedLeaf == leaf.SHA256 {
 			sev, msg = Info, msg+" (expected replacement)"
 		}
-		out = append(out, Finding{CheckFingerprintChanged, sev, msg,
-			"Confirm the change was intended."})
+		out = append(out, mk(CheckFingerprintChanged, sev, msg,
+			"Confirm the change was intended."))
 	}
 	if in.ExpectedLeaf != "" && in.ExpectedLeaf != leaf.SHA256 {
-		out = append(out, Finding{CheckLineageMismatch, Critical,
+		out = append(out, mk(CheckLineageMismatch, Critical,
 			fmt.Sprintf("endpoint serves %s but its lineage expects %s", short(leaf.SHA256), short(in.ExpectedLeaf)),
-			"Deploy the lineage's current certificate to this endpoint, or update the lineage binding."})
+			"Deploy the lineage's current certificate to this endpoint, or update the lineage binding."))
+	}
+	for i := range out {
+		f := &out[i]
+		switch f.Check {
+		case CheckUntrusted:
+			f.Fingerprint = fingerprint(f.Check, leaf.SHA256, vr.ErrorClass)
+		case CheckHostnameMismatch:
+			f.Fingerprint = fingerprint(f.Check, leaf.SHA256, strings.ToLower(in.ExpectedName))
+		case CheckFingerprintChanged:
+			f.Fingerprint = fingerprint(f.Check, in.PreviousLeaf, leaf.SHA256)
+		case CheckLineageMismatch:
+			f.Fingerprint = fingerprint(f.Check, leaf.SHA256, in.ExpectedLeaf)
+		default:
+			f.Fingerprint = fingerprint(f.Check, leaf.SHA256)
+		}
 	}
 	out = append(out, Certificate(leaf, in.Now, pol)...)
 	return out

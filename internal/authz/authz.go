@@ -32,16 +32,17 @@ const (
 	// approvals (separation of duties: nobody approves their own request)
 	RequestDeployments Permission = "deployments:request" // propose a deployment; it waits for approval
 	ApproveRequests    Permission = "approvals:decide"    // approve or deny requests made by someone else
+	RequestExceptions  Permission = "exceptions:request"  // ask to accept the risk of a finding for a while
 )
 
 var grants = map[string][]Permission{
 	"owner": {ViewInventory, ImportCerts, ManageEndpoints, ManageScopes, ManageOwnership, AckAlerts,
 		ManageChannels, ManageTokens, ViewAudit, ManageAutomation, ManageMembers, ManagePolicy,
-		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests},
-	"operator":            {ViewInventory, ImportCerts, ManageEndpoints, ManageOwnership, AckAlerts, RunRenewals},
+		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions},
+	"operator":            {ViewInventory, ImportCerts, ManageEndpoints, ManageOwnership, AckAlerts, RunRenewals, RequestExceptions},
 	"viewer":              {ViewInventory},
 	"auditor":             {ViewInventory, ViewAudit},
-	"requester":           {ViewInventory, RequestDeployments},
+	"requester":           {ViewInventory, RequestDeployments, RequestExceptions},
 	"approver":            {ViewInventory, ApproveRequests},
 	"deployment_operator": {ViewInventory, AckAlerts, ManageDeployments, RunRenewals},
 	"issuer_admin":        {ViewInventory, ManageIssuers},

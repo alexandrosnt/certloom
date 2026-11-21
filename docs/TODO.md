@@ -6,7 +6,7 @@ Not done yet, roughly in the order I want to tackle it.
 - No command to change a deployment's issuer (e.g. staging to production); today it
   means recreating the deployment.
 - DNS-01, EAB, wildcards (M3).
-- No web UI for approvals yet (API and CLI only).
+- No web UI for approvals and exceptions yet (API and CLI only).
 - `deployment list` shows the stored approval state; a legacy deployment under required
   approvals still shows "approved" until it is next checked.
 

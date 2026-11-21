@@ -135,6 +135,10 @@ func (s *Server) Handler() http.Handler {
 	h("PUT /api/v1/deployments/{id}/window", s.setDeploymentWindow)
 	h("POST /api/v1/deployments/{id}/request-approval", s.requestDeploymentApproval)
 	h("POST /api/v1/deployments/{id}/revoke-approval", s.revokeDeploymentApproval)
+	h("GET /api/v1/exceptions", s.listExceptions)
+	h("POST /api/v1/exceptions", s.requestException)
+	h("GET /api/v1/exceptions/{id}", s.getException)
+	h("POST /api/v1/exceptions/{id}/revoke", s.revokeException)
 	h("GET /api/v1/approvals", s.listApprovals)
 	h("GET /api/v1/approvals/{id}", s.getApproval)
 	h("POST /api/v1/approvals/{id}/approve", s.decideApproval(true))
@@ -1072,5 +1076,75 @@ func (s *Server) revokeDeploymentApproval(w http.ResponseWriter, r *http.Request
 		return err
 	}
 	writeJSON(w, 200, d)
+	return nil
+}
+
+// ---- policy exceptions ----
+
+func (s *Server) requestException(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		SubjectType          string    `json:"subject_type"`
+		SubjectID            string    `json:"subject_id"`
+		Check                string    `json:"check"`
+		Rationale            string    `json:"rationale"`
+		CompensatingControls string    `json:"compensating_controls,omitempty"`
+		RiskOwner            string    `json:"risk_owner"`
+		RemediationOwner     string    `json:"remediation_owner,omitempty"`
+		RemediationDue       string    `json:"remediation_due,omitempty"`
+		TrackingRef          string    `json:"tracking_ref,omitempty"`
+		ExpiresAt            time.Time `json:"expires_at"`
+	}
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	var due *time.Time
+	if req.RemediationDue != "" {
+		d, err := time.Parse(time.DateOnly, req.RemediationDue)
+		if err != nil {
+			return errors.Join(errBadRequest, errors.New("remediation_due must be a date like 2027-01-31"))
+		}
+		due = &d
+	}
+	e, a, err := s.Svc.RequestException(r.Context(), PrincipalFrom(r.Context()), app.ExceptionInput{SubjectType: req.SubjectType,
+		SubjectID: req.SubjectID, Check: req.Check, Rationale: req.Rationale, CompensatingControls: req.CompensatingControls,
+		RiskOwner: req.RiskOwner, RemediationOwner: req.RemediationOwner, RemediationDue: due, TrackingRef: req.TrackingRef,
+		ExpiresAt: req.ExpiresAt})
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 201, map[string]any{"exception": e, "approval": a})
+	return nil
+}
+
+func (s *Server) listExceptions(w http.ResponseWriter, r *http.Request) error {
+	v, err := s.Svc.ListExceptions(r.Context(), PrincipalFrom(r.Context()), r.URL.Query().Get("state"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, items(v))
+	return nil
+}
+
+func (s *Server) getException(w http.ResponseWriter, r *http.Request) error {
+	e, err := s.Svc.GetException(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, e)
+	return nil
+}
+
+func (s *Server) revokeException(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	e, err := s.Svc.RevokeException(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"), req.Reason)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, e)
 	return nil
 }

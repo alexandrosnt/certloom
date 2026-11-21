@@ -254,16 +254,20 @@ func (tx *Tx) EndpointsServing(ctx context.Context, sha string) ([]*Endpoint, er
 
 // Finding is a stored check result.
 type Finding struct {
-	ID          string     `json:"id"`
-	SubjectType string     `json:"subject_type"`
-	SubjectID   string     `json:"subject_id"`
-	Check       string     `json:"check"`
-	Severity    string     `json:"severity"`
-	Message     string     `json:"message"`
-	Remediation string     `json:"remediation,omitempty"`
-	FirstSeen   time.Time  `json:"first_seen"`
-	LastSeen    time.Time  `json:"last_seen"`
-	ResolvedAt  *time.Time `json:"resolved_at,omitempty"`
+	ID           string     `json:"id"`
+	SubjectType  string     `json:"subject_type"`
+	SubjectID    string     `json:"subject_id"`
+	Check        string     `json:"check"`
+	Severity     string     `json:"severity"`
+	Message      string     `json:"message"`
+	Remediation  string     `json:"remediation,omitempty"`
+	FirstSeen    time.Time  `json:"first_seen"`
+	LastSeen     time.Time  `json:"last_seen"`
+	ResolvedAt   *time.Time `json:"resolved_at,omitempty"`
+	CheckVersion int        `json:"check_version"`
+	Fingerprint  string     `json:"fingerprint"`
+	// ExceptionID is the active policy exception that suppresses its alert.
+	ExceptionID *string `json:"exception_id,omitempty"`
 }
 
 // SyncResult reports what SyncFindings changed.
@@ -271,6 +275,9 @@ type SyncResult struct {
 	Opened    []Finding // newly opened findings
 	Escalated []Finding // existing findings whose severity increased
 	Resolved  []Finding
+	// Reopened are findings whose suppressed alert came back because no
+	// exception covers them any more (worse severity or a changed condition).
+	Reopened []Finding
 }
 
 // SyncFindings makes the open findings for a subject equal to current:
@@ -279,7 +286,7 @@ type SyncResult struct {
 // findings are opened and resolved accordingly, in the same transaction.
 func (tx *Tx) SyncFindings(ctx context.Context, subjectType, subjectID string, current []checks.Finding, now time.Time) (*SyncResult, error) {
 	res := &SyncResult{}
-	rows, err := tx.Query(ctx, `SELECT id, check_id, severity, message, remediation, first_seen, last_seen
+	rows, err := tx.Query(ctx, `SELECT id, check_id, severity, message, remediation, first_seen, last_seen, check_version, fingerprint
 		FROM findings WHERE subject_type = $1 AND subject_id = $2 AND resolved_at IS NULL`, subjectType, subjectID)
 	if err != nil {
 		return nil, err
@@ -287,7 +294,7 @@ func (tx *Tx) SyncFindings(ctx context.Context, subjectType, subjectID string, c
 	open := map[string]Finding{}
 	for rows.Next() {
 		f := Finding{SubjectType: subjectType, SubjectID: subjectID}
-		if err := rows.Scan(&f.ID, &f.Check, &f.Severity, &f.Message, &f.Remediation, &f.FirstSeen, &f.LastSeen); err != nil {
+		if err := rows.Scan(&f.ID, &f.Check, &f.Severity, &f.Message, &f.Remediation, &f.FirstSeen, &f.LastSeen, &f.CheckVersion, &f.Fingerprint); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -298,6 +305,7 @@ func (tx *Tx) SyncFindings(ctx context.Context, subjectType, subjectID string, c
 		return nil, err
 	}
 
+	touched := map[string]Finding{}
 	seen := map[string]bool{}
 	for _, c := range current {
 		if seen[c.Check] { // keep the first (most specific) per check
@@ -306,11 +314,13 @@ func (tx *Tx) SyncFindings(ctx context.Context, subjectType, subjectID string, c
 		seen[c.Check] = true
 		if f, ok := open[c.Check]; ok {
 			oldRank, newRank := checks.Severity(f.Severity).Rank(), c.Severity.Rank()
-			if _, err := tx.Exec(ctx, `UPDATE findings SET severity = $2, message = $3, remediation = $4, last_seen = $5 WHERE id = $1`,
-				f.ID, string(c.Severity), c.Message, c.Remediation, now); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE findings SET severity = $2, message = $3, remediation = $4, last_seen = $5, check_version = $6, fingerprint = $7
+				WHERE id = $1`, f.ID, string(c.Severity), c.Message, c.Remediation, now, checks.Version(c.Check), c.Fingerprint); err != nil {
 				return nil, err
 			}
 			f.Severity, f.Message, f.Remediation, f.LastSeen = string(c.Severity), c.Message, c.Remediation, now
+			f.CheckVersion, f.Fingerprint = checks.Version(c.Check), c.Fingerprint
+			touched[f.ID] = f
 			switch {
 			case newRank > oldRank:
 				if err := tx.upsertAlert(ctx, &f); err != nil {
@@ -330,9 +340,11 @@ func (tx *Tx) SyncFindings(ctx context.Context, subjectType, subjectID string, c
 			continue
 		}
 		f := Finding{ID: ids.New(ids.Finding), SubjectType: subjectType, SubjectID: subjectID, Check: c.Check,
-			Severity: string(c.Severity), Message: c.Message, Remediation: c.Remediation, FirstSeen: now, LastSeen: now}
-		if _, err := tx.Exec(ctx, `INSERT INTO findings (id, org_id, subject_type, subject_id, check_id, severity, message, remediation, first_seen, last_seen)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`, f.ID, tx.OrgID, subjectType, subjectID, c.Check, f.Severity, c.Message, c.Remediation, now); err != nil {
+			Severity: string(c.Severity), Message: c.Message, Remediation: c.Remediation, FirstSeen: now, LastSeen: now,
+			CheckVersion: checks.Version(c.Check), Fingerprint: c.Fingerprint}
+		if _, err := tx.Exec(ctx, `INSERT INTO findings (id, org_id, subject_type, subject_id, check_id, severity, message, remediation, first_seen, last_seen,
+			check_version, fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$11)`, f.ID, tx.OrgID, subjectType, subjectID, c.Check, f.Severity,
+			c.Message, c.Remediation, now, f.CheckVersion, f.Fingerprint); err != nil {
 			return nil, err
 		}
 		if err := tx.upsertAlert(ctx, &f); err != nil {
@@ -353,7 +365,53 @@ func (tx *Tx) SyncFindings(ctx context.Context, subjectType, subjectID string, c
 		f.ResolvedAt = &now
 		res.Resolved = append(res.Resolved, f)
 	}
-	return res, nil
+	return res, tx.syncExceptions(ctx, subjectType, subjectID, len(open), touched, res)
+}
+
+// syncExceptions suppresses or reopens the subject's alerts and marks the
+// changed findings that an exception covers, so they are not notified.
+func (tx *Tx) syncExceptions(ctx context.Context, subjectType, subjectID string, hadOpen int, touched map[string]Finding, res *SyncResult) error {
+	// Alerts exist only for open findings: a subject without findings before
+	// or after this sync has nothing to suppress or reopen.
+	if hadOpen == 0 && len(res.Opened) == 0 {
+		return nil
+	}
+	// Most other subjects have no exception and no suppressed alert; keep
+	// that case to one query, since sweeps sync every certificate.
+	var relevant bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM policy_exceptions WHERE state = 'active' AND subject_type = $1 AND subject_id = $2)
+		OR EXISTS (SELECT 1 FROM alerts a JOIN findings f ON f.id = a.finding_id
+		           WHERE a.state = 'suppressed' AND f.subject_type = $1 AND f.subject_id = $2)`, subjectType, subjectID).Scan(&relevant); err != nil {
+		return err
+	}
+	if !relevant {
+		return nil
+	}
+	for _, list := range [][]Finding{res.Opened, res.Escalated, res.Resolved} {
+		for i := range list {
+			f := &list[i]
+			f.SubjectType, f.SubjectID = subjectType, subjectID
+			id, err := tx.exceptionFor(ctx, f)
+			if err != nil {
+				return err
+			}
+			f.ExceptionID = id
+		}
+	}
+	if err := tx.applyExceptions(ctx, subjectType, subjectID); err != nil {
+		return err
+	}
+	reopened, err := tx.reopenUnexcepted(ctx, subjectType, subjectID)
+	escalated := map[string]bool{}
+	for _, f := range res.Escalated {
+		escalated[f.ID] = true
+	}
+	for _, id := range reopened {
+		if f, ok := touched[id]; ok && !escalated[id] { // escalations are notified already
+			res.Reopened = append(res.Reopened, f)
+		}
+	}
+	return err
 }
 
 func (tx *Tx) upsertAlert(ctx context.Context, f *Finding) error {
@@ -380,8 +438,9 @@ func (tx *Tx) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, err
 	if f.Limit <= 0 || f.Limit > 1000 {
 		f.Limit = 200
 	}
-	q := `SELECT id, subject_type, subject_id, check_id, severity, message, remediation, first_seen, last_seen, resolved_at
-		FROM findings WHERE true`
+	q := `SELECT id, subject_type, subject_id, check_id, severity, message, remediation, first_seen, last_seen, resolved_at, check_version, fingerprint,
+		(SELECT e.id FROM policy_exceptions e WHERE f.resolved_at IS NULL AND ` + ExceptionCoversFinding + ` LIMIT 1)
+		FROM findings f WHERE true`
 	var args []any
 	add := func(cond string, v any) {
 		args = append(args, v)
@@ -410,7 +469,7 @@ func (tx *Tx) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Finding, error) {
 		var x Finding
-		err := r.Scan(&x.ID, &x.SubjectType, &x.SubjectID, &x.Check, &x.Severity, &x.Message, &x.Remediation, &x.FirstSeen, &x.LastSeen, &x.ResolvedAt)
+		err := r.Scan(&x.ID, &x.SubjectType, &x.SubjectID, &x.Check, &x.Severity, &x.Message, &x.Remediation, &x.FirstSeen, &x.LastSeen, &x.ResolvedAt, &x.CheckVersion, &x.Fingerprint, &x.ExceptionID)
 		return x, err
 	})
 }
@@ -436,11 +495,11 @@ func (tx *Tx) ListAlerts(ctx context.Context, states []string, limit int) ([]Ale
 	if len(states) == 0 {
 		states = []string{"open", "acked", "resolved", "suppressed"}
 	}
-	rows, err := tx.Query(ctx, `SELECT a.id, a.finding_id, a.state, a.severity, a.created_at, a.acked_by, a.acked_at, a.resolved_at,
+	rows, err := tx.Query(ctx, `SELECT a.id, a.finding_id, `+EffectiveAlertState+`, a.severity, a.created_at, a.acked_by, a.acked_at, a.resolved_at,
 		f.subject_type, f.subject_id, f.check_id, f.message, f.remediation, f.first_seen, f.last_seen
 		FROM alerts a JOIN findings f ON f.id = a.finding_id
-		WHERE a.state = ANY($1)
-		ORDER BY CASE a.state WHEN 'open' THEN 0 WHEN 'acked' THEN 1 ELSE 2 END,
+		WHERE `+EffectiveAlertState+` = ANY($1)
+		ORDER BY CASE `+EffectiveAlertState+` WHEN 'open' THEN 0 WHEN 'acked' THEN 1 ELSE 2 END,
 		         CASE a.severity WHEN 'critical' THEN 0 ELSE 1 END, a.created_at DESC LIMIT $2`, states, limit)
 	if err != nil {
 		return nil, err
@@ -457,7 +516,8 @@ func (tx *Tx) ListAlerts(ctx context.Context, states []string, limit int) ([]Ale
 
 // AckAlert acknowledges an open alert.
 func (tx *Tx) AckAlert(ctx context.Context, id, actor string) error {
-	tag, err := tx.Exec(ctx, `UPDATE alerts SET state = 'acked', acked_by = $2, acked_at = now() WHERE id = $1 AND state = 'open'`, id, actor)
+	tag, err := tx.Exec(ctx, `UPDATE alerts a SET state = 'acked', acked_by = $2, acked_at = now(), suppressed_until = NULL
+		WHERE a.id = $1 AND `+EffectiveAlertState+` = 'open'`, id, actor)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -467,8 +527,35 @@ func (tx *Tx) AckAlert(ctx context.Context, id, actor string) error {
 // GetFinding returns one finding by id.
 func (tx *Tx) GetFinding(ctx context.Context, id string) (*Finding, error) {
 	f := &Finding{}
-	err := tx.QueryRow(ctx, `SELECT id, subject_type, subject_id, check_id, severity, message, remediation, first_seen, last_seen, resolved_at
-		FROM findings WHERE id = $1`, id).Scan(&f.ID, &f.SubjectType, &f.SubjectID, &f.Check, &f.Severity, &f.Message, &f.Remediation,
-		&f.FirstSeen, &f.LastSeen, &f.ResolvedAt)
+	err := tx.QueryRow(ctx, `SELECT id, subject_type, subject_id, check_id, severity, message, remediation, first_seen, last_seen, resolved_at,
+		check_version, fingerprint FROM findings WHERE id = $1`, id).Scan(&f.ID, &f.SubjectType, &f.SubjectID, &f.Check, &f.Severity, &f.Message, &f.Remediation,
+		&f.FirstSeen, &f.LastSeen, &f.ResolvedAt, &f.CheckVersion, &f.Fingerprint)
 	return f, notFound(err)
+}
+
+// EffectiveAlertState is an alert's state as of now (alias a): a suppression
+// counts only while an active, unexpired exception covers the finding, so
+// expiry and revocation take effect at once, whether or not the background
+// sweep has caught up. suppressed_until is informational.
+var EffectiveAlertState = `CASE WHEN a.state = 'suppressed' AND NOT EXISTS (SELECT 1 FROM findings f, policy_exceptions e
+	WHERE f.id = a.finding_id AND ` + ExceptionCoversFinding + `) THEN 'open' ELSE a.state END`
+
+// ExpireAcks reopens alerts acknowledged longer than ackFor ago: an
+// acknowledgement records that someone saw the alert, it does not silence it
+// for good. It returns the reopened alerts' ids and finding ids.
+func (tx *Tx) ExpireAcks(ctx context.Context, ackFor time.Duration) (alertIDs, findingIDs []string, err error) {
+	rows, err := tx.Query(ctx, `UPDATE alerts SET state = 'open', created_at = now(), escalation_level = 0, last_escalated_at = NULL
+		WHERE state = 'acked' AND acked_at <= now() - $1::interval RETURNING id, finding_id`, ackFor)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a, f string
+		if err := rows.Scan(&a, &f); err != nil {
+			return nil, nil, err
+		}
+		alertIDs, findingIDs = append(alertIDs, a), append(findingIDs, f)
+	}
+	return alertIDs, findingIDs, rows.Err()
 }
