@@ -655,6 +655,89 @@ paths:
       responses:
         "204": { description: Removed }
         "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/webhooks:
+    get:
+      tags: [admin]
+      summary: List event webhook endpoints (ADR-0021, webhooks:manage); secrets are never returned
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [admin]
+      summary: Register an endpoint for typed events (docs/events.md). The response carries the signing secret (Standard Webhooks, whsec_...) once; it is stored encrypted and never shown again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, url, event_types]
+              properties:
+                name: { type: string }
+                url: { type: string, format: uri, description: https; http only with allow_private }
+                event_types: { type: array, items: { type: string }, description: "Event types or prefix.* (e.g. renewal.*)" }
+                allow_private: { type: boolean, description: Allow private and loopback receivers }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/webhooks/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [admin]
+      summary: Show an endpoint (id or name)
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [admin]
+      summary: Delete an endpoint and its delivery log
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/webhooks/{id}/enable:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [admin]
+      summary: Enable an endpoint (also after it was disabled for failing)
+      responses:
+        "204": { description: Enabled }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/webhooks/{id}/disable:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [admin]
+      summary: Disable an endpoint; queued deliveries fail
+      responses:
+        "204": { description: Disabled }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/webhooks/{id}/rotate-secret:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [admin]
+      summary: Issue a new signing secret (returned once); the previous one also signs for 24 hours
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/webhooks/{id}/deliveries:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [admin]
+      summary: Recent deliveries to the endpoint with state, attempts, last status and error
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 500 } }
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/webhooks/{id}/deliveries/{delivery}/redeliver:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - { name: delivery, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [admin]
+      summary: Send a delivery again with the same event id (webhook-id)
+      responses:
+        "202": { description: Queued }
+        "404": { $ref: "#/components/responses/Problem" }
   /api/v1/templates:
     get:
       tags: [renewal]

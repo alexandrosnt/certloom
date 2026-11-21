@@ -81,6 +81,14 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 		_, err := d.RunOnce(ctx, 20)
 		return err
 	})
+	if svc.PKI != nil {
+		wd := &notify.WebhookDeliverer{DB: d.DB, KEK: svc.PKI.KEK, Log: log, Resolver: d.Resolver}
+		loop("webhooks", cfg.DeliverEvery, func(ctx context.Context) error {
+			_, err := wd.RunOnce(ctx, 20)
+			return err
+		})
+		loop("webhook-sweep", 10*time.Minute, svc.SweepWebhooks)
+	}
 
 	loop("escalate", time.Minute, func(ctx context.Context) error {
 		n, err := svc.EscalateAlerts(ctx)

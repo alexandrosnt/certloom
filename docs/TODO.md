@@ -14,6 +14,8 @@ Not done yet, roughly in the order I want to tackle it.
 - Cloudflare DNS has only mock-API tests; run it once live against a test zone.
 - EAB: live runs against a commercial CA (only Pebble so far), and recording per CA
   whether accounts survive revocation of the key that registered them.
+- Event webhooks: channel webhooks still sign without a timestamp; move them to Standard
+  Webhooks signing in a later version (breaking for existing receivers).
 - Templates do not set validity or EKU yet (ACME CAs decide lifetimes via profiles).
 - EAB keys come from the database only; vault references with ADR-0009 Phase 6.
 - Central DNS credentials come from the database only; Vault and cloud secret-manager

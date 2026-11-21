@@ -137,6 +137,10 @@ func (s *Service) ApplyTemplate(ctx context.Context, p authz.Principal, src []by
 				return err
 			}
 		}
+		if err := s.emit(ctx, tx, "template.applied", fmt.Sprintf("%s:%d", id, v), map[string]any{"template_id": id, "name": doc.Metadata.Name,
+			"version": v, "deployments_changed": len(plan.Changes)}); err != nil {
+			return err
+		}
 		return s.audit(ctx, tx, p, "templates.apply", "template", id, map[string]any{"name": doc.Metadata.Name, "version": v,
 			"previous_version": plan.CurrentVersion, "deployments_changed": len(plan.Changes)})
 	})

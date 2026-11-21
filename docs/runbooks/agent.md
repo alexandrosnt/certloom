@@ -308,6 +308,28 @@ certloom issuer eab-key list gts
 
   A host key for the directory wins over one sent by the control plane.
 
+### Event webhooks
+
+To feed ticketing, a CMDB or a pipeline, register a webhook endpoint for the event types
+you need (ADR-0021, full list in `docs/events.md`). Deliveries are signed per Standard
+Webhooks, so any of its verifier libraries works on the receiving side.
+
+```sh
+certloom webhook create itsm --url https://itsm.example.com/hooks/certloom \
+    --event renewal.failed --event renewal.blocked --event certificate.issued
+# prints the signing secret (whsec_...) once: store it with the receiver
+certloom webhook deliveries itsm              # state, attempts, last HTTP status and error
+certloom webhook redeliver itsm <delivery-id>
+certloom webhook rotate-secret itsm           # old secret keeps signing for 24 hours
+```
+
+- Receivers must use https; `--allow-private` permits an internal (private or loopback)
+  receiver and plain http. Redirects are never followed.
+- Failed deliveries are retried for about 23 hours. An endpoint that fails every delivery
+  for 3 days is disabled and the approval channels are told; re-enable it with
+  `certloom webhook enable`.
+- Events and delivery logs are kept for 30 days.
+
 ## Failure behavior
 
 | What happens | Result |

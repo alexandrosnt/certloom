@@ -37,12 +37,14 @@ const (
 	ManageDNS Permission = "dns:manage"
 	// certificate templates (ADR-0020)
 	ManageTemplates Permission = "templates:manage"
+	// event webhook endpoints and their secrets (ADR-0021)
+	ManageWebhooks Permission = "webhooks:manage"
 )
 
 var grants = map[string][]Permission{
 	"owner": {ViewInventory, ImportCerts, ManageEndpoints, ManageScopes, ManageOwnership, AckAlerts,
 		ManageChannels, ManageTokens, ViewAudit, ManageAutomation, ManageMembers, ManagePolicy,
-		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions, ManageDNS, ManageTemplates},
+		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions, ManageDNS, ManageTemplates, ManageWebhooks},
 	"operator":            {ViewInventory, ImportCerts, ManageEndpoints, ManageOwnership, AckAlerts, RunRenewals, RequestExceptions},
 	"viewer":              {ViewInventory},
 	"auditor":             {ViewInventory, ViewAudit},

@@ -202,38 +202,7 @@ func Sign(key, body []byte) string {
 }
 
 func (d *Deliverer) webhook(ctx context.Context, cfg WebhookConfig, key secret.Value, deliveryID string, body []byte) error {
-	scope := &probe.Scope{AllowLoopback: cfg.AllowPrivate, AllowPrivate: cfg.AllowPrivate}
-	resolver := d.Resolver
-	if resolver == nil {
-		resolver = net.DefaultResolver
-	}
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	tr := &http.Transport{
-		Proxy: nil, // never route through an env proxy: the guard below must see the real destination
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			var addrs []netip.Addr
-			if a, err := netip.ParseAddr(host); err == nil {
-				addrs = []netip.Addr{a}
-			} else if addrs, err = resolver.LookupNetIP(ctx, "ip", host); err != nil {
-				return nil, err
-			}
-			for _, a := range addrs {
-				if err := scope.CheckAddr(a); err != nil {
-					continue
-				}
-				return dialer.DialContext(ctx, network, net.JoinHostPort(a.Unmap().String(), port))
-			}
-			return nil, fmt.Errorf("%w: webhook destination %s is not allowed (private/loopback/metadata; set allow_private for internal receivers)", errPermanent, host)
-		},
-		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
-		TLSHandshakeTimeout: 10 * time.Second,
-	}
-	client := &http.Client{Transport: tr, Timeout: 15 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := guardedClient(d.Resolver, cfg.AllowPrivate)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("%w: %w", errPermanent, err)
@@ -334,4 +303,42 @@ func sendEmail(ctx context.Context, cfg EmailConfig, password secret.Value, deli
 		return err
 	}
 	return c.Quit()
+}
+
+// guardedClient is the HTTP client for every outbound webhook: no
+// environment proxy, no redirects, and no connections to private, loopback or
+// metadata addresses unless allowPrivate. The address check runs at dial
+// time, after DNS resolution, so a name cannot be rebound past it.
+func guardedClient(resolver probe.Resolver, allowPrivate bool) *http.Client {
+	scope := &probe.Scope{AllowLoopback: allowPrivate, AllowPrivate: allowPrivate}
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	tr := &http.Transport{
+		Proxy: nil, // never route through an env proxy: the guard below must see the real destination
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			var addrs []netip.Addr
+			if a, err := netip.ParseAddr(host); err == nil {
+				addrs = []netip.Addr{a}
+			} else if addrs, err = resolver.LookupNetIP(ctx, "ip", host); err != nil {
+				return nil, err
+			}
+			for _, a := range addrs {
+				if err := scope.CheckAddr(a); err != nil {
+					continue
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(a.Unmap().String(), port))
+			}
+			return nil, fmt.Errorf("%w: webhook destination %s is not allowed (private/loopback/metadata; set allow_private for internal receivers)", errPermanent, host)
+		},
+		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	return &http.Client{Transport: tr, Timeout: 15 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }

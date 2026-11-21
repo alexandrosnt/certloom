@@ -96,6 +96,9 @@ func (s *Service) Enroll(ctx context.Context, req agentproto.EnrollRequest) (*ag
 		}
 		resp = agentproto.EnrollResponse{AgentID: agentID, OrgID: org, CertPEM: string(certPEM), CAPEM: s.PKI.CAPEM(),
 			TaskPublicKey: s.PKI.TaskPublicKey()}
+		if err := s.emit(ctx, tx, "agent.enrolled", agentID, map[string]any{"agent_id": agentID, "name": name, "hostname": req.Hostname}); err != nil {
+			return err
+		}
 		return s.systemAudit(ctx, tx, "agent:"+agentID, "agents.enroll", "agent", agentID, map[string]any{"name": name, "hostname": req.Hostname})
 	})
 	if err != nil {
@@ -235,6 +238,9 @@ func (s *Service) RevokeAgent(ctx context.Context, p authz.Principal, ref string
 			return err
 		}
 		if err := tx.RevokeAgent(ctx, a.ID); err != nil {
+			return err
+		}
+		if err := s.emit(ctx, tx, "agent.revoked", a.ID, map[string]any{"agent_id": a.ID, "name": a.Name, "by": p.Actor}); err != nil {
 			return err
 		}
 		return s.audit(ctx, tx, p, "agents.revoke", "agent", a.ID, map[string]any{"name": a.Name})

@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 	linuxBin, _ = os.MkdirTemp("", "certloom-acme-linux")
 	hostBin, _ = os.MkdirTemp("", "certloom-acme-host")
 	b := exec.Command("go", "build", "-ldflags", "-X github.com/alexandrosnt/certloom/internal/version.Version="+e2eVersion,
-		"-o", linuxBin+"/", "./cmd/certloomd", "./cmd/certloom-agent")
+		"-o", linuxBin+"/", "./cmd/certloomd", "./cmd/certloom-agent", "./test/acme/hookrecv")
 	b.Dir, b.Env = root, append(os.Environ(), "GOOS=linux", "GOARCH="+runtime.GOARCH, "CGO_ENABLED=0")
 	if out, err := b.CombinedOutput(); err != nil {
 		fmt.Printf("linux build: %v\n%s", err, out)

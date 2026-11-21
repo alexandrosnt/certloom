@@ -83,7 +83,8 @@ func tooMany(w http.ResponseWriter, r *http.Request, retry time.Duration, what s
 
 // idempotencyExempt lists POST routes whose responses must never be stored
 // because they contain secrets.
-var idempotencyExempt = map[string]bool{"POST /api/v1/tokens": true}
+var idempotencyExempt = map[string]bool{"POST /api/v1/tokens": true, "POST /api/v1/webhooks": true,
+	"POST /api/v1/webhooks/{id}/rotate-secret": true}
 
 type recorder struct {
 	http.ResponseWriter

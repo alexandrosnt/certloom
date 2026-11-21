@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- Event webhooks (ADR-0021): `certloom webhook create|list|show|deliveries|redeliver|rotate-secret|enable|disable|delete`.
+  Endpoints subscribe to typed events (`docs/events.md`: certificate.issued, renewal.*,
+  approval.*, exception.*, finding.*, agent.*, ...) and receive them signed per Standard
+  Webhooks (webhook-id, webhook-timestamp, HMAC-SHA256 over id, timestamp and body), with
+  the same SSRF guard as channels. Secrets are generated, shown once, stored under the KEK
+  and rotated with a 24-hour overlap. At-least-once delivery with retries for about a
+  day, a per-endpoint delivery log, redelivery, and auto-disable after 3 days of
+  failures. New permission `webhooks:manage` (owner).
 - Certificate templates (ADR-0020): `kind: CertificateTemplate` documents fix the issuer and
   challenge, list allowed key algorithms and constrain names with glob patterns, a name
   count and a wildcard switch. `certloom template validate|plan|apply|show|list|delete`;

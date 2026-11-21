@@ -22,9 +22,9 @@ func pebbleEABConfig(keys map[string]string) string {
 
 func eabKey() string { return base64.RawURLEncoding.EncodeToString([]byte(rnd(32))) }
 
-// eabDeployment creates the HTTP-01 deployment for www.m2.test on issuer
+// wwwDeployment creates the HTTP-01 deployment for www.m2.test on issuer
 // pebble and returns a function that runs one renewal.
-func (s *stack) eabDeployment() func() (state, errMsg string) {
+func (s *stack) wwwDeployment() func() (state, errMsg string) {
 	t := s.t
 	s.mustCLI("inventory", "import", filepath.Join(s.tmp, "boot.pem"), "--lineage", "www")
 	var dep struct{ ID string }
@@ -59,7 +59,7 @@ func TestEABSingleUse(t *testing.T) {
 	s.enrollWeb()
 	s.mustCLI("issuer", "create", "pebble", "--directory", "https://pebble:14000/dir", "--agree-tos")
 	s.mustCLI("issuer", "set-eab", "pebble", "--mode", "single_use")
-	renew := s.eabDeployment()
+	renew := s.wwwDeployment()
 
 	// Empty pool: refused before anything reaches the agent.
 	if state, msg := renew(); state != "failed" || !strings.Contains(msg, "no unused single-use EAB key") {
@@ -115,7 +115,7 @@ func TestEABHostLocalKey(t *testing.T) {
 	s.enrollWeb()
 	// The control plane knows nothing about EAB; the host's key is used.
 	s.mustCLI("issuer", "create", "pebble", "--directory", "https://pebble:14000/dir", "--agree-tos")
-	renew := s.eabDeployment()
+	renew := s.wwwDeployment()
 	if state, msg := renew(); state != "verified" {
 		t.Fatalf("local key: %s %s", state, msg)
 	}

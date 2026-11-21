@@ -205,6 +205,10 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 			}
 			approvalID = apr.ID
 		}
+		if err := s.emit(ctx, tx, "deployment.created", d.ID, map[string]any{"deployment_id": d.ID, "lineage_id": l.ID, "agent_id": a.ID,
+			"target": in.Target, "issuer_id": iss.ID, "sans": in.SANs, "challenge": d.Challenge, "template_id": d.TemplateID, "approval": d.Approval}); err != nil {
+			return err
+		}
 		return s.audit(ctx, tx, p, "deployments.create", "deployment", d.ID, map[string]any{"lineage": l.ID, "agent": a.ID,
 			"target": in.Target, "issuer": iss.ID, "sans": in.SANs, "endpoint": in.Endpoint, "maintenance_window": d.MaintenanceWindow,
 			"window_emergency": d.WindowEmergency, "challenge": d.Challenge, "template": d.TemplateID, "approval": d.Approval, "approval_request": approvalID})
@@ -670,6 +674,10 @@ func (s *Service) advance(ctx context.Context, tx *store.Tx, runID string, ext e
 					return err
 				}
 				if err := s.systemAudit(ctx, tx, workflowActor, "renewals.issued", "run", r.ID, map[string]any{"sha256": leaf}); err != nil {
+					return err
+				}
+				if err := s.emit(ctx, tx, "certificate.issued", r.ID, map[string]any{"sha256": leaf, "run_id": r.ID, "deployment_id": d.ID,
+					"lineage_id": d.LineageID, "issuer_id": d.IssuerID, "sans": d.SANs}); err != nil {
 					return err
 				}
 			default: // failed or expired

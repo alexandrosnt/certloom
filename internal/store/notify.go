@@ -87,6 +87,13 @@ func (tx *Tx) EnqueueNotification(ctx context.Context, n Notification, dedupe st
 // EnqueueNotificationTo is EnqueueNotification restricted to the named
 // channels (all enabled channels when names is empty).
 func (tx *Tx) EnqueueNotificationTo(ctx context.Context, n Notification, dedupe string, names []string) error {
+	// Every notification is also an event for webhook endpoints (ADR-0021),
+	// whatever channels it is routed to.
+	if n.Event != "test" {
+		if err := tx.EmitEvent(ctx, n.Event, dedupe, n.At, n); err != nil {
+			return err
+		}
+	}
 	chs, err := tx.ListChannels(ctx)
 	if err != nil {
 		return err
