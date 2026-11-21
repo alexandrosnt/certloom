@@ -36,6 +36,9 @@ jobs:
         run: go vet ./...
       - name: unit + database tests (race)
         run: go test -race -count=1 $(go list ./... | grep -v /test/e2e)
+      - name: Go client module (vet, unit tests)
+        working-directory: client
+        run: go vet ./... && go test -race -count=1 ./...
       # Real nginx container, real binaries, OIDC against a test IdP, backup/restore
       # drill and secret scans of the DB dump and server logs.
       - name: end-to-end
@@ -104,6 +107,11 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.15.0
+      - name: lint Go client module
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
+          working-directory: client
 
   vuln:
     runs-on: ubuntu-latest

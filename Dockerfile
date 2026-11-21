@@ -2,6 +2,7 @@
 FROM golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY client/go.mod client/
 RUN go mod download
 COPY . .
 ARG VERSION=0.0.0-dev

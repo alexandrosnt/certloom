@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- Go client for the REST API as its own module, `github.com/alexandrosnt/certloom/client`
+  (standard library only; ADR-0025). Covers teams, scopes, endpoints, channels,
+  issuers, templates, DNS solvers and the policy. Create calls carry an
+  `Idempotency-Key` and are retried on 429/503 with `Retry-After`; endpoint updates can
+  pass the version for `If-Match`. Tagged `client/vX.Y.Z`.
 - API: `GET`, `PATCH` and `DELETE` by id or name for teams, scopes, channels and
   issuers, and `PATCH`/`DELETE` for endpoints (with `If-Match`), as groundwork for the
   Terraform/OpenTofu provider (ADR-0025). PATCH leaves absent fields unchanged. A
