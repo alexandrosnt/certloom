@@ -9,3 +9,31 @@ linters:
     - noctx
     - errorlint
     - misspell
+  exclusions:
+    presets:
+      # Unchecked Close/Flush/print errors on read paths and output writers.
+      # Write paths that matter (audit export) check Close explicitly.
+      - std-error-handling
+    rules:
+      # Tests and test-only helper packages start processes, write temp files,
+      # use fixed test credentials and short-lived local servers on purpose.
+      - path: (_test\.go|internal/testpki/|internal/store/storetest/|internal/oidcauth/oidctest/)
+        linters:
+          - gosec
+          - noctx
+          - bodyclose
+          - errcheck
+      # Every file path the server and agent read comes from operator
+      # configuration (env vars, config file, credential references), never
+      # from a request.
+      - linters: [gosec]
+        text: "G(304|703):"
+      # UI redirects only go to fixed same-site paths built from server IDs.
+      - path: internal/web/
+        linters: [gosec]
+        text: "G710:"
+      # Cookies take Secure from the server's SecureCookies setting, which is
+      # on whenever the UI is served over HTTPS (directly or via a proxy).
+      - path: internal/web/web\.go
+        linters: [gosec]
+        text: "G124:"

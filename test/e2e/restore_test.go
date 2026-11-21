@@ -23,7 +23,7 @@ import (
 // pg_dump a populated database, restore it into a fresh database, and check
 // data, audit chain, row-level security and least-privilege grants survive.
 func TestBackupRestoreDrill(t *testing.T) {
-	ensureImage(t, pgClientImage)
+	img := pgClientImage(t)
 	ctx := context.Background()
 	src := storetest.New(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -44,7 +44,7 @@ func TestBackupRestoreDrill(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dump := dockerPG(t, nil, src.OwnerURL, "pg_dump", "-Fc")
+	dump := dockerPG(t, img, nil, src.OwnerURL, "pg_dump", "-Fc")
 	if len(dump) < 1000 {
 		t.Fatalf("dump suspiciously small: %d bytes", len(dump))
 	}
@@ -64,7 +64,7 @@ func TestBackupRestoreDrill(t *testing.T) {
 	t.Cleanup(func() { _, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)") })
 
 	ownerURL := swapDB(t, src.OwnerURL, name)
-	dockerPG(t, dump, ownerURL, "pg_restore", "--no-owner", "--exit-on-error")
+	dockerPG(t, img, dump, ownerURL, "pg_restore", "--no-owner", "--exit-on-error")
 	// Re-running migrations on a restored database must be a no-op.
 	if err := store.Migrate(ctx, ownerURL); err != nil {
 		t.Fatalf("migrate after restore: %v", err)

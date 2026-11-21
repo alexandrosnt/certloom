@@ -199,7 +199,7 @@ func (s *Service) startRun(ctx context.Context, tx *store.Tx, deploymentID, reas
 	r, err := tx.CreateRun(ctx, d.ID, reason, actor, l.CurrentSHA256)
 	if err != nil {
 		if errors.Is(err, store.ErrRunActive) {
-			return nil, fmt.Errorf("%w: %v", store.ErrConflict, err)
+			return nil, fmt.Errorf("%w: %w", store.ErrConflict, err)
 		}
 		return nil, err
 	}
@@ -351,8 +351,8 @@ func (s *Service) RunARICheck(ctx context.Context, j jobs.Job) error {
 	var at time.Time
 	var reason string
 	next := now.Add(24 * time.Hour)
-	switch {
-	case cert == nil:
+	switch cert {
+	case nil:
 		at, reason = now, "no current certificate"
 	default:
 		client := s.ARI

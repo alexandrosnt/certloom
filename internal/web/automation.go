@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/alexandrosnt/certloom/internal/authz"
@@ -199,7 +200,7 @@ func (u *UI) renew(w http.ResponseWriter, r *http.Request, p authz.Principal) er
 	if err != nil {
 		return err
 	}
-	http.Redirect(w, r, "/runs/"+run.ID+"?flash=Renewal+started", http.StatusSeeOther)
+	http.Redirect(w, r, "/runs/"+url.PathEscape(run.ID)+"?flash=Renewal+started", http.StatusSeeOther)
 	return nil
 }
 
@@ -234,6 +235,6 @@ func (u *UI) cancelRun(w http.ResponseWriter, r *http.Request, p authz.Principal
 	if err := u.svc.CancelRun(r.Context(), p, id); err != nil {
 		return err
 	}
-	http.Redirect(w, r, "/runs/"+id+"?flash=Run+cancelled", http.StatusSeeOther)
+	http.Redirect(w, r, "/runs/"+url.PathEscape(id)+"?flash=Run+cancelled", http.StatusSeeOther)
 	return nil
 }

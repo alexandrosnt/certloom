@@ -136,7 +136,7 @@ func (s *Server) idempotent(pattern string, fn handlerFunc) handlerFunc {
 			w.Header().Set("Content-Type", prev.ContentType)
 			w.Header().Set("Idempotent-Replayed", "true")
 			w.WriteHeader(prev.Status)
-			_, _ = w.Write(prev.Body)
+			_, _ = w.Write(prev.Body) //nolint:gosec // replays our own stored JSON response
 			return nil
 		}
 		rec := &recorder{ResponseWriter: w}

@@ -27,7 +27,7 @@ func jitter(d time.Duration) time.Duration {
 		return d
 	}
 	spread := int64(d) / 5
-	return d - time.Duration(spread/2) + time.Duration(rand.Int64N(spread+1))
+	return d - time.Duration(spread/2) + time.Duration(rand.Int64N(spread+1)) //nolint:gosec // schedule jitter, not a secret
 }
 
 // ---------- Certificates ----------

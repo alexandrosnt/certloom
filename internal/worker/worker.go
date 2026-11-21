@@ -132,7 +132,7 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 					defer wg.Done()
 					defer func() { <-sem }()
 					// Jobs get their own context so shutdown lets them finish (bounded by the lease).
-					jctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+					jctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 90*time.Second)
 					defer cancel()
 					var err error
 					switch j.Kind {

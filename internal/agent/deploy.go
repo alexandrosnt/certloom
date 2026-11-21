@@ -34,7 +34,8 @@ func switchLink(link, dest string) error {
 		}
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+	// The web server (another user) must be able to traverse to the live link.
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil { //nolint:gosec // see above
 		return err
 	}
 	b := make([]byte, 6)
@@ -63,7 +64,7 @@ func readLink(link string) (string, error) {
 func runCommand(ctx context.Context, argv []string) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // argv comes from the local agent config only
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
@@ -137,11 +138,11 @@ func (a *Agent) handleDeploy(ctx context.Context, t *agentproto.Task) (any, erro
 	// clean rollback only if that succeeds; otherwise escalate.
 	restore := func(cause error, reloaded bool) (any, error) {
 		if err := switchLink(tgt.LiveLink, prev); err != nil {
-			return out, fmt.Errorf("%v; RESTORE FAILED: %w", cause, err)
+			return out, fmt.Errorf("%w; RESTORE FAILED: %w", cause, err)
 		}
 		if reloaded && prev != "" {
 			if err := runCommand(ctx, tgt.ReloadCommand); err != nil {
-				return out, fmt.Errorf("%v; restored previous certificate files but reload failed: %w", cause, err)
+				return out, fmt.Errorf("%w; restored previous certificate files but reload failed: %w", cause, err)
 			}
 		}
 		out.RolledBack = true

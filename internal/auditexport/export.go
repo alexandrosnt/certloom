@@ -50,7 +50,7 @@ func (s *FileSink) Write(_ context.Context, events []audit.Event) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // error paths only; success returns Close's error below
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	for i := range events {
@@ -61,7 +61,10 @@ func (s *FileSink) Write(_ context.Context, events []audit.Event) error {
 	if _, err := f.Write(buf.Bytes()); err != nil {
 		return err
 	}
-	return f.Sync()
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // WebhookSink POSTs {"events":[...]} with an HMAC signature (same scheme as

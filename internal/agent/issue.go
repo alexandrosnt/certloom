@@ -126,7 +126,7 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 		return issueFailure(err), fmt.Errorf("acme: %w", err)
 	}
 	// Keep a copy beside the key; deploy writes the chain the control plane validated.
-	if err := os.WriteFile(filepath.Join(dir, "issued.pem"), res.Certificate, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "issued.pem"), res.Certificate, 0o644); err != nil { //nolint:gosec // public certificate chain
 		return nil, err
 	}
 	return agentproto.IssueOutput{ChainPEM: string(res.Certificate)}, nil

@@ -50,6 +50,11 @@ The database holds everything. Notification secrets live in `.env`, not in the d
 docker compose exec -T db pg_dump -U certloom_owner -d certloom -Fc > backups/certloom-$(date +%F).dump
 ```
 
+Running `pg_dump` inside the `db` container (as above) keeps the tools on the
+server's own major version. A dump made with newer tools can contain settings an
+older server rejects on restore (for example `transaction_timeout`, new in 17),
+so do not back up with a newer client than the server you will restore into.
+
 Back up `.env` and `tls/` separately and securely. They contain credentials.
 
 ## 4a. External audit export (strongly recommended)

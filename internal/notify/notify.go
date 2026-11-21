@@ -73,7 +73,7 @@ func Validate(c *store.Channel) error {
 		if err != nil || u.Host == "" {
 			return fmt.Errorf("invalid webhook url")
 		}
-		if u.Scheme != "https" && !(u.Scheme == "http" && w.AllowPrivate) {
+		if u.Scheme != "https" && (u.Scheme != "http" || !w.AllowPrivate) {
 			return errors.New("webhook url must be https (http only allowed with allow_private for internal receivers)")
 		}
 		if u.User != nil {
@@ -165,7 +165,7 @@ func (d *Deliverer) deliver(ctx context.Context, it store.OutboxItem) error {
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("%w: load channel: %v", errPermanent, err)
+		return fmt.Errorf("%w: load channel: %w", errPermanent, err)
 	}
 	if !ch.Enabled {
 		return fmt.Errorf("%w: channel disabled", errPermanent)
@@ -181,15 +181,15 @@ func (d *Deliverer) deliver(ctx context.Context, it store.OutboxItem) error {
 	case "webhook":
 		var cfg WebhookConfig
 		if err := json.Unmarshal(ch.Config, &cfg); err != nil {
-			return fmt.Errorf("%w: %v", errPermanent, err)
+			return fmt.Errorf("%w: %w", errPermanent, err)
 		}
 		return d.webhook(ctx, cfg, cred, deliveryID, it.Payload)
 	case "email":
 		var cfg EmailConfig
 		if err := json.Unmarshal(ch.Config, &cfg); err != nil {
-			return fmt.Errorf("%w: %v", errPermanent, err)
+			return fmt.Errorf("%w: %w", errPermanent, err)
 		}
-		return sendEmail(cfg, cred, deliveryID, it.Payload)
+		return sendEmail(ctx, cfg, cred, deliveryID, it.Payload)
 	}
 	return fmt.Errorf("%w: unknown kind %q", errPermanent, ch.Kind)
 }
@@ -236,7 +236,7 @@ func (d *Deliverer) webhook(ctx context.Context, cfg WebhookConfig, key secret.V
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("%w: %v", errPermanent, err)
+		return fmt.Errorf("%w: %w", errPermanent, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "certloom-notifier")
@@ -261,15 +261,16 @@ func (d *Deliverer) webhook(ctx context.Context, cfg WebhookConfig, key secret.V
 	return fmt.Errorf("webhook returned %d", resp.StatusCode)
 }
 
-func sendEmail(cfg EmailConfig, password secret.Value, deliveryID string, payload []byte) error {
+func sendEmail(ctx context.Context, cfg EmailConfig, password secret.Value, deliveryID string, payload []byte) error {
 	var n store.Notification
 	if err := json.Unmarshal(payload, &n); err != nil {
-		return fmt.Errorf("%w: %v", errPermanent, err)
+		return fmt.Errorf("%w: %w", errPermanent, err)
 	}
 	subject := fmt.Sprintf("[certloom] %s %s: %s", strings.ToUpper(n.Severity), n.Check, n.Subject)
-	if n.Event == "test" {
+	switch n.Event {
+	case "test":
 		subject = "[certloom] test notification"
-	} else if n.Event == "finding.resolved" {
+	case "finding.resolved":
 		subject = fmt.Sprintf("[certloom] RESOLVED %s: %s", n.Check, n.Subject)
 	}
 	var b strings.Builder
@@ -283,7 +284,8 @@ func sendEmail(cfg EmailConfig, password secret.Value, deliveryID string, payloa
 	tlsCfg := &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12}
 	var c *smtp.Client
 	if cfg.TLS == "implicit" {
-		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 15 * time.Second}, "tcp", addr, tlsCfg)
+		d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 15 * time.Second}, Config: tlsCfg}
+		conn, err := d.DialContext(ctx, "tcp", addr)
 		if err != nil {
 			return err
 		}
@@ -291,7 +293,7 @@ func sendEmail(cfg EmailConfig, password secret.Value, deliveryID string, payloa
 			return err
 		}
 	} else {
-		conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
+		conn, err := (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, "tcp", addr)
 		if err != nil {
 			return err
 		}

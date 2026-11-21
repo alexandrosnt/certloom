@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"math/rand/v2"
 	"net/http"
@@ -79,7 +80,7 @@ func TestFetchAndChoose(t *testing.T) {
 	if got := ChooseTime(&Window{Start: now.Add(-48 * time.Hour), End: now.Add(-time.Hour)}, now, r); !got.Equal(now) {
 		t.Fatalf("past window: %v", got)
 	}
-	if _, err := c.RenewalInfoURL(context.Background(), srv.URL+"/nodir"); err != ErrNotSupported {
+	if _, err := c.RenewalInfoURL(context.Background(), srv.URL+"/nodir"); !errors.Is(err, ErrNotSupported) {
 		t.Fatalf("no ARI: %v", err)
 	}
 }

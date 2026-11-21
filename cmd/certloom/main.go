@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,7 +27,13 @@ import (
 
 var output string // "table" or "json"
 
+// cliCtx is cancelled on Ctrl+C so in-flight requests stop cleanly.
+var cliCtx = context.Background()
+
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	cliCtx = ctx
 	root := &cobra.Command{
 		Use:           "certloom",
 		Short:         "Certificate lifecycle management CLI (inventory & monitoring)",
@@ -44,6 +52,7 @@ Configuration: ` + "`certloom login`" + ` writes server and token to the user co
 		scopeCmd(), teamCmd(), lineageCmd(), findingCmd(), alertCmd(), channelCmd(), tokenCmd(), auditCmd(), automationCmd())
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
+		stop()
 		os.Exit(exitCode(err))
 	}
 }
@@ -335,7 +344,11 @@ func doctorCmd() *cobra.Command {
 			return err
 		}
 		start := time.Now()
-		resp, err := c.http.Get(c.base.String() + "/readyz")
+		req, err := http.NewRequestWithContext(cliCtx, http.MethodGet, c.base.String()+"/readyz", nil)
+		if err != nil {
+			return err
+		}
+		resp, err := c.http.Do(req)
 		if err == nil {
 			defer resp.Body.Close()
 			if d, perr := time.Parse(time.RFC1123, resp.Header.Get("Date")); perr == nil {

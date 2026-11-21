@@ -180,7 +180,7 @@ func (s *Service) ExchangeCLIToken(ctx context.Context, idToken, org string) (se
 	}
 	id, err := s.OIDC.VerifyCLIToken(ctx, idToken)
 	if err != nil {
-		return secret.Value{}, nil, fmt.Errorf("%w: %v", store.ErrInvalidToken, err)
+		return secret.Value{}, nil, fmt.Errorf("%w: %w", store.ErrInvalidToken, err)
 	}
 	return s.SignIn(ctx, id, org, "cli-device-flow")
 }

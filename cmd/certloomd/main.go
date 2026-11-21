@@ -285,11 +285,14 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 	mux.Handle("/api/", apiHandler)
 	mux.Handle("/healthz", apiHandler)
 	mux.Handle("/readyz", apiHandler)
-	mux.Handle("/", api.RequestIDs(web.New(svc, log).Handler()))
-
 	addr := env("CERTLOOM_LISTEN", "127.0.0.1:8443")
 	certFile, keyFile := os.Getenv("CERTLOOM_TLS_CERT"), os.Getenv("CERTLOOM_TLS_KEY")
 	useTLS := certFile != "" && keyFile != ""
+	ui := web.New(svc, log)
+	// Behind a TLS-terminating proxy this process sees plain HTTP; set
+	// CERTLOOM_SECURE_COOKIES=true there so session cookies stay Secure.
+	ui.SecureCookies = useTLS || os.Getenv("CERTLOOM_SECURE_COOKIES") == "true"
+	mux.Handle("/", api.RequestIDs(ui.Handler()))
 	if !useTLS && !*insecure && !isLoopback(addr) {
 		return fmt.Errorf("refusing plain HTTP on non-loopback address %s: set CERTLOOM_TLS_CERT/CERTLOOM_TLS_KEY or pass --insecure-http", addr)
 	}

@@ -160,7 +160,7 @@ func Backoff(attempt int, base, maxDelay time.Duration) time.Duration {
 		d *= 2
 	}
 	d = min(d, maxDelay)
-	j := time.Duration(rand.Int64N(int64(d) + 1))
+	j := time.Duration(rand.Int64N(int64(d) + 1)) //nolint:gosec // retry jitter, not a secret
 	return max(j, base/2)
 }
 

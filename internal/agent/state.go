@@ -70,13 +70,11 @@ func (s *State) Admit(t *agentproto.Task) error {
 			return ErrReplay
 		}
 		if t.Target != "" {
-			if v := tx.Bucket(bSeq).Get([]byte(t.Target)); v != nil && t.Seq < int64(binary.BigEndian.Uint64(v)) {
+			if v := tx.Bucket(bSeq).Get([]byte(t.Target)); v != nil && t.Seq < getInt(v) {
 				return agentproto.ErrStaleSequence
 			}
 		}
-		exp := make([]byte, 8)
-		binary.BigEndian.PutUint64(exp, uint64(t.NotAfter.Unix()))
-		return nb.Put([]byte(t.Nonce), exp)
+		return nb.Put([]byte(t.Nonce), putInt(t.NotAfter.Unix()))
 	})
 }
 
@@ -95,10 +93,8 @@ func (s *State) Record(t *agentproto.Task, r agentproto.Result) error {
 			// The fence only moves forward: recording a rejected stale task
 			// must never lower it.
 			sb := tx.Bucket(bSeq)
-			if cur := sb.Get([]byte(t.Target)); cur == nil || int64(binary.BigEndian.Uint64(cur)) < t.Seq {
-				v := make([]byte, 8)
-				binary.BigEndian.PutUint64(v, uint64(t.Seq))
-				if err := sb.Put([]byte(t.Target), v); err != nil {
+			if cur := sb.Get([]byte(t.Target)); cur == nil || getInt(cur) < t.Seq {
+				if err := sb.Put([]byte(t.Target), putInt(t.Seq)); err != nil {
 					return err
 				}
 			}
@@ -162,7 +158,7 @@ func (s *State) PruneNonces(now time.Time) error {
 		b := tx.Bucket(bNonces)
 		c := b.Cursor()
 		for k, v := c.First(); k != nil; k, v = c.Next() {
-			if int64(binary.BigEndian.Uint64(v)) < now.Unix() {
+			if getInt(v) < now.Unix() {
 				if err := c.Delete(); err != nil {
 					return err
 				}
@@ -170,4 +166,16 @@ func (s *State) PruneNonces(now time.Time) error {
 		}
 		return nil
 	})
+}
+
+// putInt and getInt store sequence numbers and Unix times as 8 big-endian
+// bytes. Both are never negative, so the uint64 round trip is exact.
+func putInt(n int64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(n)) //nolint:gosec // non-negative by construction
+	return b
+}
+
+func getInt(b []byte) int64 {
+	return int64(binary.BigEndian.Uint64(b)) //nolint:gosec // written by putInt
 }

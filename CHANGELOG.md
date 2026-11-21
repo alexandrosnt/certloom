@@ -25,6 +25,10 @@
 - Docker image and a Compose setup with a tested backup/restore procedure.
 
 ### Fixed
+- Session cookies are marked Secure from a server setting instead of per request, so
+  they stay Secure behind a TLS-terminating proxy (`CERTLOOM_SECURE_COOKIES=true`).
+- Audit export to a file reports errors from closing the file.
+- The CLI cancels in-flight requests on Ctrl+C; SMTP delivery honours cancellation.
 - An order whose predecessor was already marked replaced is retried without `replaces`.
 - A task interrupted by an agent crash is reported as interrupted (outcome unknown)
   instead of a replay error, and the run rolls back.

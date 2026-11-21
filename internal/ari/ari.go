@@ -167,7 +167,7 @@ func ChooseTime(w *Window, now time.Time, r *rand.Rand) time.Time {
 	if r != nil {
 		n = r.Int64N(int64(span))
 	} else {
-		n = rand.Int64N(int64(span))
+		n = rand.Int64N(int64(span)) //nolint:gosec // spreading renewal times, not a secret
 	}
 	return start.Add(time.Duration(n))
 }

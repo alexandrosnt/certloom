@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -175,7 +176,7 @@ func (e *env) cli(stdin string, args ...string) (string, int) {
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
 	code := 0
-	if ee, ok := err.(*exec.ExitError); ok {
+	if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
 		code = ee.ExitCode()
 	} else if err != nil {
 		e.t.Fatalf("certloom %v: %v", args, err)
@@ -537,9 +538,12 @@ func TestMonitoringEndToEnd(t *testing.T) {
 		if !ok {
 			t.Fatal("expected an ECDSA test key")
 		}
-		needles["private key (hex scalar)"] = hex.EncodeToString(ec.D.FillBytes(make([]byte, 32)))
-		ensureImage(t, pgClientImage)
-		dump := dockerPG(t, nil, e.ownerURL, "pg_dump")
+		scalar, err := ec.Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		needles["private key (hex scalar)"] = hex.EncodeToString(scalar)
+		dump := dockerPG(t, pgClientImage(t), nil, e.ownerURL, "pg_dump")
 		// Positive control: the dump must contain known public data, or the search proves nothing.
 		if !bytes.Contains(dump, []byte("www.e2e.test")) || !bytes.Contains(dump, []byte("certificates.import")) {
 			t.Fatalf("positive control failed: dump (%d bytes) lacks expected public data", len(dump))

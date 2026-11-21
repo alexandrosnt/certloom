@@ -179,7 +179,7 @@ func (c *client) do(method, path string, body, out any) error {
 	p, q, _ := strings.Cut(path, "?")
 	u.Path += p
 	u.RawQuery = q
-	req, err := http.NewRequest(method, u.String(), rd)
+	req, err := http.NewRequestWithContext(cliCtx, method, u.String(), rd)
 	if err != nil {
 		return err
 	}
@@ -225,7 +225,7 @@ func (c *client) doRaw(method, path, contentType string, body []byte, out any) e
 	p, q, _ := strings.Cut(path, "?")
 	u.Path += p
 	u.RawQuery = q
-	req, err := http.NewRequest(method, u.String(), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(cliCtx, method, u.String(), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,8 @@ module github.com/alexandrosnt/certloom
 
 go 1.26.0
 
+toolchain go1.27.4
+
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/getkin/kin-openapi v0.153.0

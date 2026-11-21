@@ -41,6 +41,9 @@ type UI struct {
 	csrfKey []byte
 	// loginLimit throttles failed token sign-ins per client IP.
 	loginLimit *api.Limiter
+	// SecureCookies marks session cookies Secure. Set it whenever browsers reach
+	// the UI over HTTPS, including through a TLS-terminating proxy.
+	SecureCookies bool
 }
 
 // New parses templates and returns the UI.
@@ -248,7 +251,7 @@ func (u *UI) oidcLogin(w http.ResponseWriter, r *http.Request) {
 		org = ""
 	}
 	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: strings.Join([]string{state, nonce, verifier, url.QueryEscape(org)}, "|"),
-		Path: "/auth/oidc/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteLaxMode, MaxAge: 600})
+		Path: "/auth/oidc/", HttpOnly: true, Secure: u.SecureCookies, SameSite: http.SameSiteLaxMode, MaxAge: 600})
 	http.Redirect(w, r, u.svc.OIDC.AuthCodeURL(state, nonce, verifier), http.StatusFound)
 }
 
@@ -261,7 +264,8 @@ func (u *UI) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error="+url.QueryEscape(msg), http.StatusSeeOther)
 	}
 	c, err := r.Cookie(oidcCookie)
-	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: "", Path: "/auth/oidc/", MaxAge: -1, HttpOnly: true})
+	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: "", Path: "/auth/oidc/", MaxAge: -1, HttpOnly: true, Secure: u.SecureCookies,
+		SameSite: http.SameSiteLaxMode})
 	if err != nil {
 		fail("Sign-in expired; please try again.")
 		return
@@ -301,7 +305,7 @@ func (u *UI) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok.RevealString(), Path: "/", HttpOnly: true, Secure: r.TLS != nil,
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok.RevealString(), Path: "/", HttpOnly: true, Secure: u.SecureCookies,
 		SameSite: http.SameSiteStrictMode, MaxAge: 12 * 3600})
 	// Redirect via a same-site page: a SameSite=Strict cookie is not sent on the
 	// cross-site navigation that brought us here, so link to / from our own page.
@@ -321,7 +325,7 @@ func (u *UI) login(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error=Invalid+or+expired+token", http.StatusSeeOther)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/", HttpOnly: true, Secure: r.TLS != nil,
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/", HttpOnly: true, Secure: u.SecureCookies,
 		SameSite: http.SameSiteStrictMode, MaxAge: 12 * 3600})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -332,7 +336,8 @@ func (u *UI) logout(w http.ResponseWriter, r *http.Request) {
 			u.log.Warn("sign out", "error", err)
 		}
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: u.SecureCookies,
+		SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
