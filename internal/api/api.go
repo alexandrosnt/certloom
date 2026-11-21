@@ -159,6 +159,10 @@ func (s *Server) Handler() http.Handler {
 	h("POST /api/v1/runs/{id}/cancel", s.cancelRun)
 	h("GET /api/v1/policy", s.getPolicy)
 	h("PUT /api/v1/policy", s.putPolicy)
+	h("GET /api/v1/templates", s.listTemplates)
+	h("PUT /api/v1/templates", s.putTemplate)
+	h("GET /api/v1/templates/{id}", s.getTemplate)
+	h("DELETE /api/v1/templates/{id}", s.deleteTemplate)
 	h("POST /api/v1/automation/pause", s.pause(true))
 	h("POST /api/v1/automation/resume", s.pause(false))
 	return RequestIDs(mux)
@@ -963,13 +967,15 @@ func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) error 
 		Window    string   `json:"maintenance_window,omitempty"`
 		Emergency string   `json:"window_emergency,omitempty"`
 		Challenge string   `json:"challenge,omitempty"`
+		Template  string   `json:"template,omitempty"`
+		KeyAlg    string   `json:"key_algorithm,omitempty"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
 	}
 	d, err := s.Svc.CreateDeployment(r.Context(), PrincipalFrom(r.Context()), app.DeploymentInput{Lineage: req.Lineage, Agent: req.Agent,
 		Target: req.Target, Issuer: req.Issuer, Endpoint: req.Endpoint, SANs: req.SANs,
-		Window: req.Window, Emergency: req.Emergency, Challenge: req.Challenge})
+		Window: req.Window, Emergency: req.Emergency, Challenge: req.Challenge, Template: req.Template, KeyAlgorithm: req.KeyAlg})
 	if err != nil {
 		return err
 	}

@@ -96,10 +96,11 @@ func issuerCmd() *cobra.Command {
 func deploymentCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "deployment", Short: "Deployments: lineage -> agent target -> issuer"}
 	var lineage, agent, target, issuer, endpoint, window, emergency, challenge string
+	var tmpl, keyAlg string
 	var sans []string
 	create := &cobra.Command{Use: "create", Short: "Create a deployment, or request one if you may only request", RunE: run(func(c *client, _ []string) error {
 		return postAndPrint(c, "POST", "/api/v1/deployments", map[string]any{"lineage": lineage, "agent": agent, "target": target,
-			"issuer": issuer, "endpoint": endpoint, "sans": sans, "maintenance_window": window, "window_emergency": emergency, "challenge": challenge}, func(raw json.RawMessage) {
+			"issuer": issuer, "endpoint": endpoint, "sans": sans, "maintenance_window": window, "window_emergency": emergency, "challenge": challenge, "template": tmpl, "key_algorithm": keyAlg}, func(raw json.RawMessage) {
 			var d struct{ ID, Approval string }
 			_ = json.Unmarshal(raw, &d)
 			if d.Approval != "approved" {
@@ -112,11 +113,13 @@ func deploymentCmd() *cobra.Command {
 	for _, f := range []struct {
 		p    *string
 		n, u string
-	}{{&lineage, "lineage", "lineage id or name"}, {&agent, "agent", "agent id or name"}, {&target, "target", "target name from the agent's config"},
-		{&issuer, "issuer", "issuer id or name"}} {
+	}{{&lineage, "lineage", "lineage id or name"}, {&agent, "agent", "agent id or name"}, {&target, "target", "target name from the agent's config"}} {
 		create.Flags().StringVar(f.p, f.n, "", f.u)
 		_ = create.MarkFlagRequired(f.n)
 	}
+	create.Flags().StringVar(&issuer, "issuer", "", "issuer id or name (not needed with --template)")
+	create.Flags().StringVar(&tmpl, "template", "", "certificate template: fixes issuer and challenge, checks the names")
+	create.Flags().StringVar(&keyAlg, "key-algorithm", "", "key the agent generates (default: the template's first, or ecdsa-p256)")
 	create.Flags().StringVar(&endpoint, "endpoint", "", "endpoint id for external verification (recommended)")
 	create.Flags().StringSliceVar(&sans, "san", nil, "DNS name (repeatable)")
 	_ = create.MarkFlagRequired("san")
@@ -124,7 +127,7 @@ func deploymentCmd() *cobra.Command {
 	emergencyHelp := "when no window is left before the current certificate gets too close to expiry: block (alert and wait) or renew_outside_window"
 	create.Flags().StringVar(&window, "window", "", windowHelp)
 	create.Flags().StringVar(&emergency, "emergency", "", emergencyHelp)
-	create.Flags().StringVar(&challenge, "challenge", "http-01", "how domain control is proven: http-01 (webroot) or dns-01 (the agent's dns_solvers; needed for wildcards)")
+	create.Flags().StringVar(&challenge, "challenge", "", "how domain control is proven: http-01 (webroot, default) or dns-01 (the agent's dns_solvers; needed for wildcards)")
 	setWindow := &cobra.Command{Use: "set-window DEPLOYMENT", Short: "Set or clear (--window \"\") the maintenance window (owner)", Args: cobra.ExactArgs(1),
 		RunE: run(func(c *client, args []string) error {
 			return postAndPrint(c, "PUT", "/api/v1/deployments/"+url.PathEscape(args[0])+"/window",

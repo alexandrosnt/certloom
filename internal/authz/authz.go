@@ -35,19 +35,21 @@ const (
 	RequestExceptions  Permission = "exceptions:request"  // ask to accept the risk of a finding for a while
 	// DNS-01 solvers defined centrally, including their credentials
 	ManageDNS Permission = "dns:manage"
+	// certificate templates (ADR-0020)
+	ManageTemplates Permission = "templates:manage"
 )
 
 var grants = map[string][]Permission{
 	"owner": {ViewInventory, ImportCerts, ManageEndpoints, ManageScopes, ManageOwnership, AckAlerts,
 		ManageChannels, ManageTokens, ViewAudit, ManageAutomation, ManageMembers, ManagePolicy,
-		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions, ManageDNS},
+		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions, ManageDNS, ManageTemplates},
 	"operator":            {ViewInventory, ImportCerts, ManageEndpoints, ManageOwnership, AckAlerts, RunRenewals, RequestExceptions},
 	"viewer":              {ViewInventory},
 	"auditor":             {ViewInventory, ViewAudit},
 	"requester":           {ViewInventory, RequestDeployments, RequestExceptions},
 	"approver":            {ViewInventory, ApproveRequests},
 	"deployment_operator": {ViewInventory, AckAlerts, ManageDeployments, RunRenewals},
-	"issuer_admin":        {ViewInventory, ManageIssuers, ManageDNS},
+	"issuer_admin":        {ViewInventory, ManageIssuers, ManageDNS, ManageTemplates},
 }
 
 // ErrForbidden is returned when the principal lacks a permission.

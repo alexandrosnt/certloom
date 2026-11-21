@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- Certificate templates (ADR-0020): `kind: CertificateTemplate` documents fix the issuer and
+  challenge, list allowed key algorithms and constrain names with glob patterns, a name
+  count and a wildcard switch. `certloom template validate|plan|apply|show|list|delete`;
+  `certloom deployment create --template`. Deployments follow their template: an apply
+  re-resolves them in one transaction, refuses while any would break the new
+  constraints, and sends changed specs back for approval where needed. Policy
+  `templates.required`; new permission `templates:manage` (owner, issuer_admin).
 - ACME External Account Binding (ADR-0019): `certloom issuer set-eab --mode none|reusable|single_use`
   and `certloom issuer eab-key add|list|delete`. HMAC keys are stored encrypted with the
   KEK, never returned, and sent sealed to an agent only until it has registered its

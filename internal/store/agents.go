@@ -323,16 +323,18 @@ type Deployment struct {
 	// KeyAlgorithm is the key the agent generates (only "ecdsa-p256" so far).
 	KeyAlgorithm string `json:"key_algorithm"`
 	// Challenge is "http-01" or "dns-01".
-	Challenge string    `json:"challenge"`
-	CreatedAt time.Time `json:"created_at"`
+	Challenge string `json:"challenge"`
+	// TemplateID is the template the deployment follows (ADR-0020).
+	TemplateID *string   `json:"template_id,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
-const deploymentCols = `id, lineage_id, agent_id, target, issuer_id, endpoint_id, sans, target_seq, renew_at, renew_reason, ari_next_check, enabled, created_at, maintenance_window, window_emergency, approval, approved_spec_sha256, key_algorithm, challenge`
+const deploymentCols = `id, lineage_id, agent_id, target, issuer_id, endpoint_id, sans, target_seq, renew_at, renew_reason, ari_next_check, enabled, created_at, maintenance_window, window_emergency, approval, approved_spec_sha256, key_algorithm, challenge, template_id`
 
 func scanDeployment(r pgx.Row) (*Deployment, error) {
 	d := &Deployment{}
 	err := r.Scan(&d.ID, &d.LineageID, &d.AgentID, &d.Target, &d.IssuerID, &d.EndpointID, &d.SANs, &d.TargetSeq, &d.RenewAt, &d.RenewReason,
-		&d.ARINextAt, &d.Enabled, &d.CreatedAt, &d.MaintenanceWindow, &d.WindowEmergency, &d.Approval, &d.ApprovedSpecSHA256, &d.KeyAlgorithm, &d.Challenge)
+		&d.ARINextAt, &d.Enabled, &d.CreatedAt, &d.MaintenanceWindow, &d.WindowEmergency, &d.Approval, &d.ApprovedSpecSHA256, &d.KeyAlgorithm, &d.Challenge, &d.TemplateID)
 	return d, notFound(err)
 }
 
@@ -352,9 +354,9 @@ func (tx *Tx) CreateDeployment(ctx context.Context, d *Deployment, createdBy str
 		d.Challenge = "http-01"
 	}
 	return conflict(tx.QueryRow(ctx, `INSERT INTO deployments (id, org_id, lineage_id, agent_id, target, issuer_id, endpoint_id, sans, created_by,
-		maintenance_window, window_emergency, approval, approved_spec_sha256, key_algorithm, challenge)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING created_at`, d.ID, tx.OrgID, d.LineageID, d.AgentID, d.Target, d.IssuerID, d.EndpointID, d.SANs, createdBy,
-		d.MaintenanceWindow, d.WindowEmergency, d.Approval, d.ApprovedSpecSHA256, d.KeyAlgorithm, d.Challenge).
+		maintenance_window, window_emergency, approval, approved_spec_sha256, key_algorithm, challenge, template_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING created_at`, d.ID, tx.OrgID, d.LineageID, d.AgentID, d.Target, d.IssuerID, d.EndpointID, d.SANs, createdBy,
+		d.MaintenanceWindow, d.WindowEmergency, d.Approval, d.ApprovedSpecSHA256, d.KeyAlgorithm, d.Challenge, d.TemplateID).
 		Scan(&d.CreatedAt))
 }
 

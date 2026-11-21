@@ -230,6 +230,45 @@ A run is `verified` only when **both** checks pass:
 Afterwards the deployment's next renewal time comes from the CA's ARI window when
 the CA offers one, and otherwise from 2/3 of the certificate's lifetime.
 
+### Templates
+
+A template is an approved recipe that deployments reference: which issuer, which
+challenge, which keys and which names (ADR-0020). Changing it in one place moves every
+deployment that uses it.
+
+```yaml
+# web.yaml
+apiVersion: certloom/v1
+kind: CertificateTemplate
+metadata:
+  name: public-web
+spec:
+  issuer: le-production
+  challenge: http-01
+  keyAlgorithms: [ecdsa-p256]
+  sans:
+    allowed: ["*.example.com", "example.com", "api-*.corp.example.com"]
+    maxNames: 10
+    wildcards: false        # true needs challenge dns-01
+  maintenanceWindow: "Mon-Fri 02:00-05:00 Europe/Athens"
+```
+
+```sh
+certloom template validate web.yaml
+certloom template plan web.yaml       # which deployments change, which need re-approval
+certloom template apply web.yaml
+certloom deployment create --template public-web --lineage www --agent web-01 --target www --san www.example.com
+```
+
+- In patterns, `*` matches one or more characters inside one DNS label: `*.example.com`
+  allows `www.example.com` but not `a.b.example.com`.
+- `apply` is refused while a deployment would break the new template (a name no longer
+  allowed, too many names, a key algorithm removed). Fix those first.
+- When the issuer or challenge changes, each affected deployment gets the new values. If
+  approvals are required, or the person applying cannot manage deployments (for example
+  `issuer_admin`), the changed deployments wait for a new approval.
+- Policy `templates.required: true` makes templates mandatory for new deployments.
+
 ### CAs that require External Account Binding
 
 Commercial ACME CAs (DigiCert, Sectigo, ZeroSSL, SSL.com, Google Trust Services) issue an

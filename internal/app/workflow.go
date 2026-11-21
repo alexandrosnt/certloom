@@ -81,6 +81,11 @@ type DeploymentInput struct {
 	Emergency string
 	// Challenge is "http-01" (default) or "dns-01". Wildcard SANs need dns-01.
 	Challenge string
+	// Template names a certificate template (ADR-0020); it fixes the issuer
+	// and challenge and checks the names.
+	Template string
+	// KeyAlgorithm defaults to the template's first, or ecdsa-p256.
+	KeyAlgorithm string
 }
 
 // CreateDeployment binds a lineage to an agent target and issuer. SANs must
@@ -90,22 +95,32 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 	if len(in.SANs) == 0 {
 		return nil, invalid("at least one SAN is required")
 	}
-	if err := checkWindow(in.Window, in.Emergency); err != nil {
-		return nil, err
-	}
-	if in.Challenge == "" {
-		in.Challenge = agentproto.ChallengeHTTP01
-	}
-	if in.Challenge != agentproto.ChallengeHTTP01 && in.Challenge != agentproto.ChallengeDNS01 {
-		return nil, invalid("challenge must be http-01 or dns-01")
-	}
-	dns01 := in.Challenge == agentproto.ChallengeDNS01
 	perm := authz.ManageDeployments
 	if !p.Can(perm) {
 		perm = authz.RequestDeployments
 	}
 	var d *store.Deployment
 	err := s.tx(ctx, p, perm, func(tx *store.Tx) error {
+		tpl, err := templateForDeployment(ctx, tx, &in)
+		if err != nil {
+			return err
+		}
+		if err := checkWindow(in.Window, in.Emergency); err != nil {
+			return err
+		}
+		if in.Challenge == "" {
+			in.Challenge = agentproto.ChallengeHTTP01
+		}
+		if in.Challenge != agentproto.ChallengeHTTP01 && in.Challenge != agentproto.ChallengeDNS01 {
+			return invalid("challenge must be http-01 or dns-01")
+		}
+		if in.KeyAlgorithm == "" {
+			in.KeyAlgorithm = agentproto.KeyECDSAP256
+		}
+		if in.KeyAlgorithm != agentproto.KeyECDSAP256 {
+			return invalid("key algorithm must be %s", agentproto.KeyECDSAP256)
+		}
+		dns01 := in.Challenge == agentproto.ChallengeDNS01
 		l, err := tx.LineageByRef(ctx, in.Lineage)
 		if err != nil {
 			return invalid("lineage %q not found", in.Lineage)
@@ -157,6 +172,12 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 		if err != nil {
 			return err
 		}
+		if pv.Document.Spec.Templates.Required && tpl == nil {
+			return invalid("policy templates.required: create the deployment from a template (--template)")
+		}
+		if tpl != nil {
+			d.TemplateID = &tpl.ID
+		}
 		pending := approvalNeeded(p, pv.Document)
 		// A pending deployment changes nothing else yet; the endpoint is bound
 		// to the lineage when the deployment is approved.
@@ -165,7 +186,7 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 				return err
 			}
 		}
-		d.KeyAlgorithm = agentproto.KeyECDSAP256
+		d.KeyAlgorithm = in.KeyAlgorithm
 		spec := store.BuildDeploymentSpec(d, iss, a)
 		if pending {
 			d.Approval = "pending"
@@ -186,7 +207,7 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 		}
 		return s.audit(ctx, tx, p, "deployments.create", "deployment", d.ID, map[string]any{"lineage": l.ID, "agent": a.ID,
 			"target": in.Target, "issuer": iss.ID, "sans": in.SANs, "endpoint": in.Endpoint, "maintenance_window": d.MaintenanceWindow,
-			"window_emergency": d.WindowEmergency, "challenge": d.Challenge, "approval": d.Approval, "approval_request": approvalID})
+			"window_emergency": d.WindowEmergency, "challenge": d.Challenge, "template": d.TemplateID, "approval": d.Approval, "approval_request": approvalID})
 	})
 	return d, err
 }

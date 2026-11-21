@@ -134,6 +134,10 @@ type Spec struct {
 		// only solvers configured on each host are used (ADR-0018).
 		CentralCredentials string `json:"centralCredentials,omitempty"`
 	} `json:"dns,omitempty"`
+	Templates struct {
+		// Required makes every new deployment use a certificate template (ADR-0020).
+		Required bool `json:"required,omitempty"`
+	} `json:"templates,omitempty"`
 }
 
 // Defaults.

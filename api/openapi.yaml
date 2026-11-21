@@ -655,6 +655,40 @@ paths:
       responses:
         "204": { description: Removed }
         "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/templates:
+    get:
+      tags: [renewal]
+      summary: List certificate templates at their current versions (ADR-0020)
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    put:
+      tags: [renewal]
+      summary: Apply a certificate template (YAML or JSON body; templates:manage). The plan lists deployments whose issuer or challenge changes, which need a new approval, and which would break the template; apply is refused while any would break it.
+      parameters:
+        - { name: dry_run, in: query, description: Validate and show the plan without applying, schema: { type: boolean } }
+      requestBody:
+        required: true
+        content:
+          application/yaml: { schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/templates/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [renewal]
+      summary: Show a template (id or name) with its current document and source
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [renewal]
+      summary: Delete a template no deployment uses (templates:manage)
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /api/v1/dns-solvers:
     get:
       tags: [renewal]
@@ -748,17 +782,19 @@ paths:
           application/json:
             schema:
               type: object
-              required: [lineage, agent, target, issuer, sans]
+              required: [lineage, agent, target, sans]
               properties:
                 lineage: { type: string }
                 agent: { type: string }
                 target: { type: string }
-                issuer: { type: string }
+                issuer: { type: string, description: Issuer id or name; required unless a template supplies it }
                 endpoint: { type: string, description: Endpoint id for external verification }
                 sans: { type: array, items: { type: string } }
                 maintenance_window: { type: string, description: "Weekly window for activation, e.g. \"Mon-Fri 02:00-05:00 Europe/Athens\"" }
                 window_emergency: { type: string, enum: [block, renew_outside_window], description: What to do when no window is left before the safety deadline }
                 challenge: { type: string, enum: [http-01, dns-01], default: http-01, description: How domain control is proven. dns-01 uses the agent's dns_solvers and is required for wildcard SANs. Part of the approved spec. }
+                template: { type: string, description: "Certificate template (ADR-0020). It fixes the issuer and challenge, supplies the default key algorithm and maintenance window, and checks the names. Required when policy templates.required is set." }
+                key_algorithm: { type: string, enum: [ecdsa-p256], description: Must be allowed by the template when one is used }
       responses:
         "201": { $ref: "#/components/responses/Object" }
         "400": { $ref: "#/components/responses/Problem" }
