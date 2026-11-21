@@ -324,3 +324,38 @@ func dryRunQuery(on bool) url.Values {
 	}
 	return nil
 }
+
+// EAB modes for SetIssuerEAB.
+const (
+	EABNone      = "none"
+	EABReusable  = "reusable"   // one key ID and HMAC for every account
+	EABSingleUse = "single_use" // a pool of keys, each used once (see the eab-keys API)
+)
+
+// SetIssuerEAB sets how the issuer binds ACME accounts to an external
+// account. For EABReusable, kid and hmac (base64url, as the CA shows it)
+// are required; the HMAC is sealed on the server and never returned.
+func (c *Client) SetIssuerEAB(ctx context.Context, idOrName, mode, kid, hmac string) (*Issuer, error) {
+	var i Issuer
+	_, err := c.do(ctx, request{method: http.MethodPut, path: "/api/v1/issuers/" + ref(idOrName) + "/eab",
+		body: map[string]string{"mode": mode, "kid": kid, "hmac": hmac}}, &i)
+	return &i, err
+}
+
+// Agent is an enrolled certloom-agent.
+type Agent struct {
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	State         string     `json:"state"`
+	Health        string     `json:"health"`
+	Hostname      string     `json:"hostname"`
+	Version       string     `json:"version"`
+	LastHeartbeat *time.Time `json:"last_heartbeat,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
+}
+
+// ListAgents lists enrolled agents.
+func (c *Client) ListAgents(ctx context.Context) ([]Agent, error) {
+	return getList[Agent](ctx, c, "/api/v1/agents")
+}

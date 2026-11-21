@@ -179,3 +179,19 @@ func TestContextCancelStopsRetry(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestIssuerEABAndAgents(t *testing.T) {
+	c, got := fake(t, reply(200, `{"id":"iss_1","eab_mode":"reusable","eab_kid":"kid","has_eab_hmac":true}`),
+		reply(200, `{"items":[{"id":"agt_1","name":"web-01","state":"active","health":"healthy"}]}`))
+	i, err := c.SetIssuerEAB(context.Background(), "zerossl", EABReusable, "kid", "aG1hYw")
+	if err != nil || !i.HasEABHMAC {
+		t.Fatalf("%+v %v", i, err)
+	}
+	if r := got()[0]; r.method != "PUT" || r.path != "/api/v1/issuers/zerossl/eab" || !strings.Contains(r.body, `"hmac":"aG1hYw"`) {
+		t.Fatalf("request: %+v", r)
+	}
+	as, err := c.ListAgents(context.Background())
+	if err != nil || len(as) != 1 || as[0].Health != "healthy" {
+		t.Fatalf("%+v %v", as, err)
+	}
+}
