@@ -13,8 +13,8 @@ Not done yet, roughly in the order I want to tackle it.
   not `resolvers`; split-horizon setups may need an option to check through the
   configured resolvers only.
 - Cloudflare DNS has only mock-API tests; run it once live against a test zone.
-- DNS credentials are host-local only; a central option (vault reference or cloud
-  identity) is planned (ADR-0017).
+- Central DNS credentials come from the database only; Vault and cloud secret-manager
+  references are planned with the ADR-0009 Phase 6 providers (ADR-0018).
 - No web UI for approvals and exceptions yet (API and CLI only).
 - `deployment list` shows the stored approval state; a legacy deployment under required
   approvals still shows "approved" until it is next checked.

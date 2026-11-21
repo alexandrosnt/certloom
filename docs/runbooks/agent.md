@@ -91,6 +91,30 @@ certloom deployment create --lineage www --agent web-01 --target www --issuer le
 The challenge type is part of the approved spec, so switching an existing deployment to
 DNS-01 needs a new approval.
 
+### Central solvers (credentials managed in certloom)
+
+Instead of configuring each host, a solver can be defined once in the control plane and
+assigned to agents (ADR-0018). The credential is stored encrypted with the KEK, never
+returned by the API, and sent only inside an issue task, sealed to that one agent for that
+one task. The agent keeps it in memory.
+
+```sh
+certloom dns-solver create internal --provider rfc2136 --zone corp.example.com \
+  --config nameserver=10.0.0.53:53 --tsig-key-file ./internal.key
+echo "$CF_TOKEN" | certloom dns-solver create public --provider cloudflare --zone example.com --api-token-stdin
+certloom dns-solver assign internal web-01
+certloom dns-solver set-secret public --api-token-stdin < new-token.txt   # rotation
+```
+
+Plugins can use the host's cloud identity instead of a stored secret:
+`--provider plugin --plugin /usr/libexec/certloom/dns/route53 --plugin-sha256 ... --credential ambient`.
+
+- A solver in the host's own config wins over a central one for the same zone.
+- `central_dns_solvers: false` in the agent config makes that host refuse central solvers.
+- Policy `dns.centralCredentials: forbidden` stops certloom from storing or sending DNS
+  credentials for the whole organization.
+- Every delivery is audited (`dns_solvers.secret_delivered`).
+
 ## 3. Point Nginx at the live link
 
 ```nginx

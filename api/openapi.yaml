@@ -599,6 +599,83 @@ paths:
         "201": { $ref: "#/components/responses/Object" }
         "400": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/dns-solvers:
+    get:
+      tags: [renewal]
+      summary: List central DNS-01 solvers (ADR-0018). Secrets are never returned; has_secret says whether one is stored.
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [renewal]
+      summary: Define a central DNS-01 solver (dns:manage). A stored secret is encrypted with the KEK and reaches agents only sealed to them inside issue tasks.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, provider, zones]
+              properties:
+                name: { type: string }
+                provider: { type: string, enum: [rfc2136, cloudflare, plugin] }
+                plugin: { type: string, description: Absolute path of the plugin on the agent hosts (provider plugin) }
+                plugin_sha256: { type: string, description: Hex SHA-256 the plugin must match }
+                zones: { type: array, items: { type: string } }
+                config: { type: object, additionalProperties: true, description: "Non-secret settings: rfc2136 needs nameserver (host:port); cloudflare may set api_url" }
+                credential: { type: string, enum: [stored, ambient], default: stored, description: ambient uses the host's cloud identity (plugins only) }
+                secret: { type: object, additionalProperties: { type: string }, writeOnly: true, description: "rfc2136 {tsig_key: BIND key block}, cloudflare {api_token}, plugins as documented" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/dns-solvers/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [renewal]
+      summary: Show a central DNS-01 solver (without its secret)
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [renewal]
+      summary: Delete a central DNS-01 solver and its stored secret (dns:manage)
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/dns-solvers/{id}/secret:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    put:
+      tags: [renewal]
+      summary: Replace (rotate) a stored secret (dns:manage); the next issuance uses it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              properties:
+                secret: { type: object, additionalProperties: { type: string }, writeOnly: true }
+      responses:
+        "204": { description: Replaced }
+        "400": { $ref: "#/components/responses/Problem" }
+  /api/v1/dns-solvers/{id}/agents/{agent}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: agent, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [renewal]
+      summary: Assign a solver to an agent (dns:manage)
+      responses:
+        "204": { description: Assigned }
+        "400": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [renewal]
+      summary: Remove a solver from an agent (dns:manage)
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/Problem" }
   /api/v1/deployments:
     get:
       tags: [renewal]

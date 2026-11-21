@@ -43,6 +43,7 @@ provider behaves as the fake does; only a live run does.
 | DNS-01 via RFC 2136 (built-in) | M3 | Create and remove TXT records with TSIG (hmac-sha256+); CNAME delegation; wildcards | GSS-TSIG (Kerberos, Active Directory DNS) | TSIG key allowed to update TXT records in the zone | unit (fake server checking TSIG); local server: BIND 9.20 + Pebble in `test/acme`, wildcard and CNAME-delegated names, issuance and renewal |
 | DNS-01 via Cloudflare (built-in) | M3 | Create and remove TXT records | Any other Cloudflare product | API token with Zone:DNS:Edit on the zones used | mock API only (lego's client against an httptest server). Not live-verified yet |
 | DNS plugin protocol v1 | M3 | Any DNS service through an executable plugin (`docs/dns-plugins.md`) | Behaviour of a given plugin: each needs its own `certloom-agent dns-test` run | Whatever the plugin needs; pinned by SHA-256 | unit (protocol, error classes, timeout, digest pin, minimal environment); `dns-test` against BIND |
+| Central DNS solvers with sealed credential delivery | M3 | Store a DNS credential once, deliver it sealed to assigned agents per issue task; ambient identity for plugins | Vault or cloud secret-manager references (planned) | `dns:manage`; a KEK on the control plane | unit (HPKE binding to agent, task and solver; key rotation); workflow (no plaintext in tasks, audit or ciphertext column; policy and opt-out); local server: BIND + Pebble with a central RFC 2136 solver |
 
 ## Deferred (planned; no support is claimed)
 

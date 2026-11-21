@@ -32,6 +32,8 @@ The agent runs the plugin directly (no shell) with one argument, `describe`, `pr
 - `config` is the solver's `config` map from the agent config, unchanged. It holds no secrets.
 - `domain`, `token` and `key_auth` are the ACME values that `fqdn` and `value` come from. They
   are only needed by plugins that wrap a client which derives the record itself.
+- `secrets` is present only for a central solver with a stored credential (ADR-0018): the
+  object that was stored in certloom, delivered for this call only. Never log it.
 
 The plugin writes one JSON object to stdout:
 
@@ -52,7 +54,9 @@ copied to the agent log.
   removing a missing one succeeds.
 - Only touch the given value. A wildcard and its apex share one record name with two
   values.
-- Read your own credentials from a file, from your environment, or from instance identity.
+- Host-configured plugins read their own credentials from a file, their environment, or
+  instance identity. Central plugins get them in `secrets`, or use instance identity when
+  the solver is `ambient`.
   The agent starts plugins with only `PATH` plus the variables listed in the solver's `env`.
 - Finish within the solver's `timeout_seconds` (default 60).
 

@@ -55,6 +55,10 @@ type DNSSolverConfig struct {
 
 	// PropagationTimeoutSeconds bounds the wait for the record to be visible.
 	PropagationTimeoutSeconds int `json:"propagation_timeout_seconds,omitempty"`
+
+	// Set only for solvers sent by the control plane (ADR-0018).
+	central bool
+	secret  map[string]string
 }
 
 func (s *DNSSolverConfig) providerName() string {
@@ -215,12 +219,18 @@ func (c *DNSSolverConfig) propagationTimeout() time.Duration {
 }
 
 func newCloudflare(c *DNSSolverConfig) (challenge.Provider, error) {
-	tok, err := os.ReadFile(c.TokenFile)
-	if err != nil {
-		return nil, err
+	tok := []byte(c.secret["api_token"])
+	if !c.central {
+		var err error
+		if tok, err = os.ReadFile(c.TokenFile); err != nil {
+			return nil, err
+		}
 	}
 	cfg := cloudflare.NewDefaultConfig()
 	cfg.AuthToken = strings.TrimSpace(string(tok))
+	if cfg.AuthToken == "" {
+		return nil, errors.New("no API token")
+	}
 	if c.APIURL != "" {
 		cfg.BaseURL = c.APIURL
 	}
@@ -264,7 +274,7 @@ func (m *dnsMux) call(ctx context.Context, action, domain, token, keyAuth string
 	m.log.Info("dns-01 "+action, "record", info.EffectiveFQDN, "solver", s.cfg.Name, "zone", zone)
 	if s.records != nil {
 		req := dnsplugin.Request{Protocol: dnsplugin.Protocol, FQDN: info.EffectiveFQDN, Value: info.Value, Zone: zone, Config: s.cfg.Config,
-			Domain: domain, Token: token, KeyAuth: keyAuth}
+			Domain: domain, Token: token, KeyAuth: keyAuth, Secrets: s.cfg.secret}
 		if action == dnsplugin.ActionPresent {
 			return s.records.Present(ctx, req)
 		}

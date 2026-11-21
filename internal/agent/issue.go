@@ -114,7 +114,7 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 	if err != nil {
 		return nil, err
 	}
-	if err := a.setChallenge(client, tgt, dns01); err != nil {
+	if err := a.setChallenge(client, tgt, t, p, dns01); err != nil {
 		return nil, err
 	}
 	req := certificate.ObtainForCSRRequest{CSR: csr, Bundle: true, Profile: p.Profile, ReplacesCertID: p.ReplacesCertID}
@@ -137,7 +137,7 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 
 // setChallenge registers exactly one solver, so lego cannot fall back to
 // another challenge type than the one that was approved.
-func (a *Agent) setChallenge(client *lego.Client, tgt *TargetConfig, dns01 bool) error {
+func (a *Agent) setChallenge(client *lego.Client, tgt *TargetConfig, t *agentproto.Task, p agentproto.IssuePayload, dns01 bool) error {
 	if !dns01 {
 		prov, err := webroot.NewHTTPProvider(tgt.Webroot)
 		if err != nil {
@@ -145,7 +145,11 @@ func (a *Agent) setChallenge(client *lego.Client, tgt *TargetConfig, dns01 bool)
 		}
 		return client.Challenge.SetHTTP01Provider(prov)
 	}
-	mux, err := newDNSMux(a.cfg.DNSSolvers, a.log)
+	solvers, err := a.dnsSolversFor(t, p)
+	if err != nil {
+		return err
+	}
+	mux, err := newDNSMux(solvers, a.log)
 	if err != nil {
 		return err
 	}

@@ -27,3 +27,4 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0015](0015-approvals.md) | Approvals and separation of duties | Accepted |
 | [0016](0016-policy-exceptions.md) | Policy exceptions and acknowledgement | Accepted |
 | [0017](0017-dns01.md) | DNS-01 challenges and wildcard certificates | Accepted |
+| [0018](0018-central-dns-credentials.md) | Central DNS solvers and credential delivery | Accepted |

@@ -38,7 +38,13 @@ func loadTSIGKey(path string) (name, algorithm, secret string, err error) {
 	if err != nil {
 		return "", "", "", err
 	}
-	m := tsigKeyFile.FindStringSubmatch(string(b))
+	return parseTSIGKey(string(b), path)
+}
+
+// parseTSIGKey parses a BIND key block; src names it in errors.
+func parseTSIGKey(text, src string) (name, algorithm, secret string, err error) {
+	path := src
+	m := tsigKeyFile.FindStringSubmatch(text)
 	if m == nil {
 		return "", "", "", fmt.Errorf("%s: no key block", path)
 	}
@@ -65,7 +71,13 @@ func loadTSIGKey(path string) (name, algorithm, secret string, err error) {
 }
 
 func newRFC2136(c *DNSSolverConfig) (*rfc2136, error) {
-	name, alg, secret, err := loadTSIGKey(c.TSIGFile)
+	var name, alg, secret string
+	var err error
+	if c.central {
+		name, alg, secret, err = parseTSIGKey(c.secret["tsig_key"], "tsig_key of dns solver "+c.Name)
+	} else {
+		name, alg, secret, err = loadTSIGKey(c.TSIGFile)
+	}
 	if err != nil {
 		return nil, err
 	}

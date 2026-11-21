@@ -128,12 +128,20 @@ type Spec struct {
 		// a key is compromised. Adding a check here ends active exceptions for it.
 		ProhibitedChecks []string `json:"prohibitedChecks,omitempty"`
 	} `json:"exceptions,omitempty"`
+	DNS struct {
+		// CentralCredentials is "allowed" (default) or "forbidden". Forbidden
+		// stops the control plane from delivering DNS credentials to agents, so
+		// only solvers configured on each host are used (ADR-0018).
+		CentralCredentials string `json:"centralCredentials,omitempty"`
+	} `json:"dns,omitempty"`
 }
 
 // Defaults.
 const (
 	ApprovalOptional            = "optional"
 	ApprovalRequired            = "required"
+	CentralCredentialsAllowed   = "allowed"
+	CentralCredentialsForbidden = "forbidden"
 	DefaultObservationRetention = 30 * 24 * time.Hour
 )
 
@@ -148,6 +156,7 @@ func Default() *Document {
 	d.Spec.Probing.FailuresBeforeAlert = 3
 	d.Spec.Retention.Observations = Duration(DefaultObservationRetention)
 	d.Spec.Approvals.Deployments = ApprovalOptional
+	d.Spec.DNS.CentralCredentials = CentralCredentialsAllowed
 	d.Spec.Approvals.ExpireAfter = Duration(7 * 24 * time.Hour)
 	d.Spec.Exceptions.MaxDuration = Duration(90 * 24 * time.Hour)
 	d.Spec.Alerts.AckExpiry = Duration(7 * 24 * time.Hour)
@@ -210,6 +219,9 @@ func (d *Document) fill() {
 	if s.Alerts.AckExpiry == 0 {
 		s.Alerts.AckExpiry = def.Spec.Alerts.AckExpiry
 	}
+	if s.DNS.CentralCredentials == "" {
+		s.DNS.CentralCredentials = def.Spec.DNS.CentralCredentials
+	}
 }
 
 // ValidationError lists every problem found.
@@ -258,6 +270,9 @@ func (d *Document) Validate() error {
 	}
 	if a := s.Approvals.Deployments; a != ApprovalOptional && a != ApprovalRequired {
 		add("approvals.deployments must be %q or %q", ApprovalOptional, ApprovalRequired)
+	}
+	if c := s.DNS.CentralCredentials; c != CentralCredentialsAllowed && c != CentralCredentialsForbidden {
+		add("dns.centralCredentials must be %q or %q", CentralCredentialsAllowed, CentralCredentialsForbidden)
 	}
 	if e := time.Duration(s.Approvals.ExpireAfter); e < time.Hour || e > 30*24*time.Hour {
 		add("approvals.expireAfter must be between 1h and 30d")

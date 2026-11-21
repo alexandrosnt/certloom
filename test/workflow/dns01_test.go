@@ -27,7 +27,7 @@ func TestDNS01NeedsSolversAndWildcardsNeedDNS01(t *testing.T) {
 	e := newEnv(t)
 	in := app.DeploymentInput{Lineage: "www", Agent: "web-01", Target: "www", Issuer: "fake", SANs: []string{"www.wf.test"},
 		Challenge: agentproto.ChallengeDNS01}
-	if _, err := e.svc.CreateDeployment(ctx, e.owner, in); !errors.Is(err, app.ErrInvalid) || !strings.Contains(err.Error(), "dns_solvers") {
+	if _, err := e.svc.CreateDeployment(ctx, e.owner, in); !errors.Is(err, app.ErrInvalid) || !strings.Contains(err.Error(), "no dns solver") {
 		t.Fatalf("dns-01 without solvers: %v", err)
 	}
 	in.Challenge, in.SANs = "", []string{"*.wf.test"}

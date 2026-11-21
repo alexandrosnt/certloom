@@ -90,6 +90,24 @@ type DNSSolver struct {
 	Zones    []string `json:"zones"`
 }
 
+// CentralDNSSolver is a DNS-01 solver defined in the control plane. Its
+// secret, if any, is sealed to the receiving agent for this task only
+// (SealSecret with SealInfo(agent, task, ID)); it is a JSON object of strings:
+// rfc2136 {"tsig_key": "<BIND key file>"}, cloudflare {"api_token": "..."},
+// plugins any keys they document.
+type CentralDNSSolver struct {
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	Provider string         `json:"provider"` // rfc2136, cloudflare or plugin
+	Plugin   string         `json:"plugin,omitempty"`
+	SHA256   string         `json:"sha256,omitempty"`
+	Zones    []string       `json:"zones"`
+	Config   map[string]any `json:"config,omitempty"`
+	// Ambient: no secret; a plugin uses the host's cloud identity.
+	Ambient bool   `json:"ambient,omitempty"`
+	Sealed  []byte `json:"sealed,omitempty"`
+}
+
 // Heartbeat reports liveness and capabilities.
 type Heartbeat struct {
 	Version  string   `json:"version"`
@@ -98,6 +116,8 @@ type Heartbeat struct {
 	Tasks    []string `json:"tasks"` // allowed task types
 	// DNSSolvers lists the host's DNS-01 solvers; credentials are never reported.
 	DNSSolvers []DNSSolver `json:"dns_solvers,omitempty"`
+	// SealKey is the agent's public HPKE key for secrets sent to it.
+	SealKey []byte `json:"seal_key,omitempty"`
 }
 
 // Task is the signed unit of work.
@@ -186,6 +206,8 @@ type IssuePayload struct {
 	KeyAlgorithm string `json:"key_algorithm,omitempty"`
 	// Challenge is ChallengeHTTP01 or ChallengeDNS01; empty means HTTP-01.
 	Challenge string `json:"challenge,omitempty"`
+	// DNSSolvers are central solvers assigned to this agent (ADR-0018).
+	DNSSolvers []CentralDNSSolver `json:"dns_solvers,omitempty"`
 }
 
 // KeyECDSAP256 is the only key algorithm agents generate so far.

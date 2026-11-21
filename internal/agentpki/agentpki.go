@@ -35,6 +35,8 @@ type PKI struct {
 	CA      *x509.Certificate
 	caKey   *ecdsa.PrivateKey
 	TaskKey ed25519.PrivateKey
+	// KEK protects other secrets the control plane stores (ADR-0009).
+	KEK *kek.KEK
 }
 
 // CAFingerprint is the SHA-256 of the CA certificate, used by agents to pin
@@ -55,7 +57,7 @@ func (p *PKI) TaskPublicKey() ed25519.PublicKey { return p.TaskKey.Public().(ed2
 // LoadOrCreate loads the keys, generating them on first use. Concurrent
 // replicas race safely: INSERT ... ON CONFLICT DO NOTHING, then re-read.
 func LoadOrCreate(ctx context.Context, pool *pgxpool.Pool, k *kek.KEK) (*PKI, error) {
-	p := &PKI{}
+	p := &PKI{KEK: k}
 	caDER, caKeyDER, err := loadOrCreate(ctx, pool, k, "agent-ca", func() ([]byte, []byte, []byte, error) {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {

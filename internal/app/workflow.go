@@ -124,7 +124,13 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 			return invalid("agent %q does not report a target named %q (check its config and that it has sent a heartbeat)", a.Name, in.Target)
 		}
 		if dns01 && len(a.Capabilities.DNSSolvers) == 0 {
-			return invalid("agent %q reports no dns_solvers; configure one on the host for dns-01", a.Name)
+			central, err := tx.ListDNSSolvers(ctx, a.ID)
+			if err != nil {
+				return err
+			}
+			if len(central) == 0 || len(a.Capabilities.SealKey) == 0 {
+				return invalid("agent %q has no dns solver: configure dns_solvers on the host, or assign a central one (certloom dns-solver assign)", a.Name)
+			}
 		}
 		for _, san := range in.SANs {
 			if strings.HasPrefix(san, "*") && !dns01 {
@@ -798,9 +804,25 @@ func (s *Service) sendIssue(ctx context.Context, tx *store.Tx, r *store.Run, d *
 			}
 		}
 	}
-	return s.sendTask(ctx, tx, r, d, agentproto.TaskIssue, p, issueTaskTTL, store.RunIssuing,
+	var payload any = p
+	if d.Challenge == agentproto.ChallengeDNS01 {
+		a, err := tx.GetAgent(ctx, d.AgentID)
+		if err != nil {
+			return err
+		}
+		payload = taskBound(func(taskID string) (any, error) {
+			var err error
+			p.DNSSolvers, err = s.centralSolversFor(ctx, tx, a, r.ID, taskID)
+			return p, err
+		})
+	}
+	return s.sendTask(ctx, tx, r, d, agentproto.TaskIssue, payload, issueTaskTTL, store.RunIssuing,
 		fmt.Sprintf("issue task sent to agent (attempt %d)", r.Attempt))
 }
+
+// taskBound builds a payload that depends on the task id, such as secrets
+// sealed to one task.
+type taskBound func(taskID string) (any, error)
 
 func (s *Service) sendTask(ctx context.Context, tx *store.Tx, r *store.Run, d *store.Deployment, typ string, payload any,
 	ttl time.Duration, next, detail string) error {
@@ -808,9 +830,22 @@ func (s *Service) sendTask(ctx context.Context, tx *store.Tx, r *store.Run, d *s
 	if err != nil {
 		return err
 	}
+	bound, _ := payload.(taskBound)
+	if bound != nil {
+		payload = struct{}{}
+	}
 	t, err := s.signTask(tx.OrgID, d.AgentID, typ, d.Target, seq, payload, ttl)
 	if err != nil {
 		return err
+	}
+	if bound != nil {
+		p, err := bound(t.ID)
+		if err != nil {
+			return err
+		}
+		if t.Payload, err = json.Marshal(p); err != nil {
+			return err
+		}
 	}
 	env, err := agentproto.Sign(s.PKI.TaskKey, t)
 	if err != nil {

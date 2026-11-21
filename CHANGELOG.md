@@ -13,6 +13,13 @@
   literally in the target's `allowed_sans`.
 - `certloom-agent dns-test --solver NAME --name DOMAIN` writes, resolves and removes a
   test record to check a solver's credentials and permissions.
+- Central DNS solvers (ADR-0018): `certloom dns-solver create|list|show|set-secret|assign|unassign|delete`.
+  Credentials are stored encrypted with the KEK, never returned, and delivered only inside
+  an issue task, sealed with HPKE (ML-KEM-768 + X25519) to that agent for that task; every
+  delivery is audited. Ambient (host cloud identity) credentials for plugins. Agents can
+  refuse central solvers (`central_dns_solvers: false`) and policy
+  `dns.centralCredentials: forbidden` turns them off for the organization. New role
+  permission `dns:manage` (owner, issuer_admin).
 - Policy exceptions (ADR-0016): time-bound, approved acceptance of one condition (check,
   check version and fingerprint) on one subject at its current severity, with risk owner,
   rationale, compensating controls, optional remediation plan and the finding as

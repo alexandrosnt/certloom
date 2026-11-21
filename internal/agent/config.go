@@ -32,6 +32,9 @@ type Config struct {
 	DNSSolvers []DNSSolverConfig `json:"dns_solvers,omitempty"`
 	// Resolvers are used for DNS-01 propagation checks and CNAME lookups.
 	Resolvers []string `json:"resolvers,omitempty"`
+	// CentralDNSSolvers: set false to refuse solvers and credentials sent by the
+	// control plane (ADR-0018); only dns_solvers above are used then.
+	CentralDNSSolvers *bool `json:"central_dns_solvers,omitempty"`
 }
 
 // TargetConfig is a locally configured deployment target.
@@ -117,4 +120,8 @@ func (c *Config) taskAllowed(t string) bool {
 		return slices.Contains(agentproto.AllTaskTypes, t)
 	}
 	return slices.Contains(c.AllowedTasks, t)
+}
+
+func (c *Config) centralDNSAllowed() bool {
+	return c.CentralDNSSolvers == nil || *c.CentralDNSSolvers
 }

@@ -80,7 +80,57 @@ targets:
     allowed_sans: ["*.m2.test"]
 `
 
+// centralAgentConfig has no dns_solvers: the solver comes from the control plane.
+const centralAgentConfig = `server: https://certloomd:8444
+state_dir: /var/lib/certloom-agent
+name: web
+acme_ca_file: /m2/pebble.minica.pem
+resolvers: ["bind:53"]
+targets:
+  - name: www
+    type: nginx
+    live_link: /etc/certloom/live/www
+    test_command: [nginx, -t]
+    reload_command: [nginx, -s, reload]
+    verify_address: 127.0.0.1:443
+    allowed_sans: ["*.m2.test"]
+`
+
 func TestDNS01WildcardAndCNAMEDelegation(t *testing.T) {
+	s := upDNS(t, dnsAgentConfig)
+
+	// The operator's connection check passes before anything is issued.
+	out := docker(t, "", "exec", s.nginx, "/certloom/certloom-agent", "dns-test", "--config", "/etc/certloom-agent/config.yaml",
+		"--solver", "main", "--name", "www.m2.test")
+	if !strings.Contains(out, "PASS  record visible") || !strings.Contains(out, "PASS  record removed") {
+		t.Fatalf("dns-test:\n%s", out)
+	}
+	s.issueDNS01(true)
+}
+
+// TestDNS01CentralSolver uses a solver defined in the control plane: the
+// agent has no DNS configuration and receives the TSIG key sealed to it.
+func TestDNS01CentralSolver(t *testing.T) {
+	s := upDNS(t, centralAgentConfig)
+	s.mustCLI("dns-solver", "create", "bind", "--provider", "rfc2136", "--zone", "m2.test", "--zone", "validation.test",
+		"--config", "nameserver=bind:53", "--tsig-key-file", filepath.Join(s.tmp, "m2", "tsig.key"))
+	s.mustCLI("dns-solver", "assign", "bind", "web")
+	if o, _ := s.cli("dns-solver", "show", "bind"); strings.Contains(o, "secret \"") || !strings.Contains(o, `"has_secret": true`) {
+		t.Fatalf("dns-solver show:\n%s", o)
+	}
+	s.issueDNS01(false)
+	if logs := docker(t, "", "exec", s.nginx, "cat", "/tmp/agent.log"); !strings.Contains(logs, `"solver":"bind"`) {
+		t.Fatalf("central solver not used:\n%s", logs)
+	}
+	if o, err := s.cli("audit", "query", "--limit", "1000"); err != nil || !strings.Contains(o, "dns_solvers.secret_delivered") {
+		t.Fatalf("secret delivery not audited: %v\n%s", err, o)
+	}
+}
+
+// upDNS starts the stack with BIND serving m2.test and validation.test, and
+// Pebble validating through it. The TSIG key is at <tmp>/m2/tsig.key.
+func upDNS(t *testing.T, agentCfg string) *stack {
+	t.Helper()
 	if _, err := tryDocker("image", "inspect", bindImage); err != nil {
 		if out, err := tryDocker("pull", bindImage); err != nil {
 			t.Skipf("cannot pull %s: %v\n%s", bindImage, err, out)
@@ -88,7 +138,7 @@ func TestDNS01WildcardAndCNAMEDelegation(t *testing.T) {
 	}
 	secret := base64.StdEncoding.EncodeToString([]byte(rnd(32)))[:44]
 	s := upWith(t, upOptions{
-		agentConfig: dnsAgentConfig,
+		agentConfig: agentCfg,
 		pebbleArgs:  []string{"-dnsserver", "bind:53"},
 		before: func(run func(string, ...string) string, m2 string) {
 			_ = os.WriteFile(filepath.Join(m2, "named.conf"), []byte(strings.ReplaceAll(namedConf, "%SECRET%", secret)), 0o644)
@@ -98,14 +148,14 @@ func TestDNS01WildcardAndCNAMEDelegation(t *testing.T) {
 		},
 	})
 	s.enrollWeb()
+	return s
+}
 
-	// The operator's connection check passes before anything is issued.
-	out := docker(t, "", "exec", s.nginx, "/certloom/certloom-agent", "dns-test", "--config", "/etc/certloom-agent/config.yaml",
-		"--solver", "main", "--name", "www.m2.test")
-	if !strings.Contains(out, "PASS  record visible") || !strings.Contains(out, "PASS  record removed") {
-		t.Fatalf("dns-test:\n%s", out)
-	}
-
+// issueDNS01 creates a DNS-01 deployment for *.m2.test and app.m2.test (the
+// latter delegated by CNAME to validation.test) and issues it, then renews it
+// when renewal is set.
+func (s *stack) issueDNS01(renewal bool) {
+	t := s.t
 	s.mustCLI("issuer", "create", "pebble", "--directory", "https://pebble:14000/dir", "--agree-tos")
 	s.mustCLI("scope", "create", "lab", "--allow-private", "--allow-host", "*.m2.test", "--port", "443")
 	var ep struct{ ID string }
@@ -131,7 +181,11 @@ func TestDNS01WildcardAndCNAMEDelegation(t *testing.T) {
 		}
 		return r.State, issued, r.Error
 	}
-	for i := range 2 { // first issuance, then a renewal that replaces it
+	runs := 1
+	if renewal {
+		runs = 2 // first issuance, then a renewal that replaces it
+	}
+	for i := range runs {
 		state, issued, msg := renew()
 		if state != "verified" {
 			t.Fatalf("run %d: %s %s", i+1, state, msg)

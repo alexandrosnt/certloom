@@ -47,6 +47,8 @@ type Agent struct {
 	mu     sync.Mutex
 	client *http.Client
 	cert   *x509.Certificate
+	// HPKE sealing keys (seal.go)
+	sealPriv, sealPub, sealPrev []byte
 
 	// Handlers can be replaced in tests.
 	handlers map[string]func(context.Context, *agentproto.Task) (any, error)
@@ -169,6 +171,9 @@ func New(cfg *Config, log *slog.Logger) (*Agent, error) {
 	if a.state, err = OpenState(cfg.StateDir); err != nil {
 		return nil, err
 	}
+	if err := a.loadSealKey(); err != nil {
+		return nil, fmt.Errorf("sealing key: %w", err)
+	}
 	if err := a.loadClient(); err != nil {
 		return nil, err
 	}
@@ -263,6 +268,11 @@ func (a *Agent) Heartbeat(ctx context.Context) error {
 		}
 	}
 	hb.DNSSolvers = a.cfg.dnsSolverInfo()
+	if a.cfg.centralDNSAllowed() {
+		a.mu.Lock()
+		hb.SealKey = a.sealPub
+		a.mu.Unlock()
+	}
 	return a.do(ctx, http.MethodPost, agentproto.PathHeartbeat, hb, nil)
 }
 
@@ -290,6 +300,9 @@ func (a *Agent) RenewIdentityIfDue(ctx context.Context, now time.Time) error {
 	}
 	if err := writeAtomic(a.path("agent.crt"), []byte(out.CertPEM), 0o644); err != nil {
 		return err
+	}
+	if err := a.rotateSealKey(); err != nil {
+		a.log.Error("sealing key rotation failed; keeping the old key", "error", err)
 	}
 	a.log.Info("agent identity certificate renewed")
 	return a.loadClient()

@@ -64,6 +64,9 @@ type Request struct {
 	Domain  string `json:"domain,omitempty"`
 	Token   string `json:"token,omitempty"`
 	KeyAuth string `json:"key_auth,omitempty"`
+	// Secrets are credentials the control plane delivered for this solver
+	// (ADR-0018). Plugins configured on the host read their own instead.
+	Secrets map[string]string `json:"secrets,omitempty"`
 }
 
 // Response is read from the plugin's stdout. Describe fills Name and Version.

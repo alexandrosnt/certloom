@@ -33,19 +33,21 @@ const (
 	RequestDeployments Permission = "deployments:request" // propose a deployment; it waits for approval
 	ApproveRequests    Permission = "approvals:decide"    // approve or deny requests made by someone else
 	RequestExceptions  Permission = "exceptions:request"  // ask to accept the risk of a finding for a while
+	// DNS-01 solvers defined centrally, including their credentials
+	ManageDNS Permission = "dns:manage"
 )
 
 var grants = map[string][]Permission{
 	"owner": {ViewInventory, ImportCerts, ManageEndpoints, ManageScopes, ManageOwnership, AckAlerts,
 		ManageChannels, ManageTokens, ViewAudit, ManageAutomation, ManageMembers, ManagePolicy,
-		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions},
+		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions, ManageDNS},
 	"operator":            {ViewInventory, ImportCerts, ManageEndpoints, ManageOwnership, AckAlerts, RunRenewals, RequestExceptions},
 	"viewer":              {ViewInventory},
 	"auditor":             {ViewInventory, ViewAudit},
 	"requester":           {ViewInventory, RequestDeployments, RequestExceptions},
 	"approver":            {ViewInventory, ApproveRequests},
 	"deployment_operator": {ViewInventory, AckAlerts, ManageDeployments, RunRenewals},
-	"issuer_admin":        {ViewInventory, ManageIssuers},
+	"issuer_admin":        {ViewInventory, ManageIssuers, ManageDNS},
 }
 
 // ErrForbidden is returned when the principal lacks a permission.
