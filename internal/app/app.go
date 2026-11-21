@@ -203,13 +203,8 @@ func (s *Service) bindLineage(ctx context.Context, tx *store.Tx, p authz.Princip
 // CreateScope creates a probe scope. Overrides of default-denied address
 // classes are recorded explicitly in the audit event.
 func (s *Service) CreateScope(ctx context.Context, p authz.Principal, name string, cfg store.ScopeConfig) (*store.ProbeScope, error) {
-	if strings.TrimSpace(name) == "" {
-		return nil, invalid("scope name is required")
-	}
-	for _, port := range cfg.Ports {
-		if port < 1 || port > 65535 {
-			return nil, invalid("invalid port %d", port)
-		}
+	if err := validateScope(name, cfg); err != nil {
+		return nil, err
 	}
 	var out *store.ProbeScope
 	err := s.tx(ctx, p, authz.ManageScopes, func(tx *store.Tx) (err error) {
@@ -226,6 +221,18 @@ func (s *Service) CreateScope(ctx context.Context, p authz.Principal, name strin
 		})
 	})
 	return out, err
+}
+
+func validateScope(name string, cfg store.ScopeConfig) error {
+	if strings.TrimSpace(name) == "" {
+		return invalid("scope name is required")
+	}
+	for _, port := range cfg.Ports {
+		if port < 1 || port > 65535 {
+			return invalid("invalid port %d", port)
+		}
+	}
+	return nil
 }
 
 // ListScopes lists scopes.
@@ -263,17 +270,8 @@ func (s *Service) AddEndpoint(ctx context.Context, p authz.Principal, in AddEndp
 		if err != nil {
 			return invalid("scope %q not found", in.Scope)
 		}
-		ps, err := sc.ToProbe()
-		if err != nil {
+		if err := scopeAllows(sc, in.Host, in.Port); err != nil {
 			return err
-		}
-		if err := ps.CheckHost(in.Host, in.Port); err != nil {
-			return invalid("%v", err)
-		}
-		if ip := net.ParseIP(in.Host); ip != nil {
-			if err := ps.CheckAddr(mustAddr(in.Host)); err != nil {
-				return invalid("%v", err)
-			}
 		}
 		e := &store.Endpoint{Host: in.Host, Port: in.Port, SNI: strings.ToLower(in.SNI), ScopeID: sc.ID,
 			IntervalSeconds: int(in.Interval.Seconds())}
@@ -299,6 +297,23 @@ func (s *Service) AddEndpoint(ctx context.Context, p authz.Principal, in AddEndp
 			"host": e.Host, "port": e.Port, "sni": e.SNI, "scope": sc.Name, "interval_seconds": e.IntervalSeconds})
 	})
 	return out, err
+}
+
+// scopeAllows reports whether sc permits probing host:port.
+func scopeAllows(sc *store.ProbeScope, host string, port int) error {
+	ps, err := sc.ToProbe()
+	if err != nil {
+		return err
+	}
+	if err := ps.CheckHost(host, port); err != nil {
+		return invalid("%v", err)
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if err := ps.CheckAddr(mustAddr(host)); err != nil {
+			return invalid("%v", err)
+		}
+	}
+	return nil
 }
 
 // ListEndpoints lists endpoints.

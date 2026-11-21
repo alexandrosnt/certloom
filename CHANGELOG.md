@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- API: `GET`, `PATCH` and `DELETE` by id or name for teams, scopes, channels and
+  issuers, and `PATCH`/`DELETE` for endpoints (with `If-Match`), as groundwork for the
+  Terraform/OpenTofu provider (ADR-0025). PATCH leaves absent fields unchanged. A
+  delete answers 409 `in-use` while something still references the object, and a
+  channel named in the active policy cannot be renamed or deleted. Deleting an
+  endpoint resolves its open findings. An issuer's directory URL and terms-of-service
+  decision cannot be changed; use a new issuer for a different CA.
 - Read-only cloud observation (ADR-0024): a `cloud:` block in the agent config lists
   certificates in AWS Certificate Manager and AWS Private CA, Azure Key Vault, Google
   Certificate Manager and CA Service, and Cloudflare (edge certificate packs, Origin CA).

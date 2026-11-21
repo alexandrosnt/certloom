@@ -276,6 +276,21 @@ func (tx *Tx) CreateIssuer(ctx context.Context, i *Issuer, createdBy string) err
 		Scan(&i.CreatedAt, &i.EABMode))
 }
 
+// UpdateIssuer changes an issuer's name, contact email and profile. The
+// directory URL and terms-of-service decision are fixed at creation.
+func (tx *Tx) UpdateIssuer(ctx context.Context, i *Issuer) error {
+	tag, err := tx.Exec(ctx, `UPDATE issuers SET name = $2, email = $3, profile = $4 WHERE id = $1`, i.ID, i.Name, i.Email, i.Profile)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return conflict(err)
+}
+
+// DeleteIssuer removes an issuer that no deployment or EAB key references.
+func (tx *Tx) DeleteIssuer(ctx context.Context, id string) error {
+	return deleted(tx.Exec(ctx, `DELETE FROM issuers WHERE id = $1`, id))
+}
+
 // GetIssuer returns an issuer by id or name.
 func (tx *Tx) GetIssuer(ctx context.Context, ref string) (*Issuer, error) {
 	i, err := scanIssuer(tx.QueryRow(ctx, `SELECT `+issuerCols+` FROM issuers WHERE id = $1 OR name = $1`, ref))

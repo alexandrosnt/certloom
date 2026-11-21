@@ -66,6 +66,24 @@ func scanScope(r pgx.Row) (*ProbeScope, error) {
 	return s, json.Unmarshal(b, &s.Config)
 }
 
+// UpdateScope changes a scope's name and config.
+func (tx *Tx) UpdateScope(ctx context.Context, s *ProbeScope) error {
+	if _, err := s.ToProbe(); err != nil {
+		return err
+	}
+	b, _ := json.Marshal(s.Config)
+	tag, err := tx.Exec(ctx, `UPDATE probe_scopes SET name = $2, config = $3 WHERE id = $1`, s.ID, s.Name, b)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return conflict(err)
+}
+
+// DeleteScope removes a scope that no endpoint uses.
+func (tx *Tx) DeleteScope(ctx context.Context, id string) error {
+	return deleted(tx.Exec(ctx, `DELETE FROM probe_scopes WHERE id = $1`, id))
+}
+
 // ScopeByRef resolves a scope by id or name.
 func (tx *Tx) ScopeByRef(ctx context.Context, ref string) (*ProbeScope, error) {
 	return scanScope(tx.QueryRow(ctx, `SELECT id, name, config, enabled, created_at FROM probe_scopes WHERE id = $1 OR name = $1`, ref))
@@ -167,6 +185,26 @@ func (tx *Tx) ListEndpoints(ctx context.Context) ([]*Endpoint, error) {
 func (tx *Tx) SetEndpointLineage(ctx context.Context, endpointID string, lineageID *string, ifVersion *int64) error {
 	return tx.versioned(ctx, "endpoints", endpointID, `UPDATE endpoints SET lineage_id = $2, version = version + 1
 		WHERE id = $1 AND ($3::bigint IS NULL OR version = $3)`, endpointID, lineageID, ifVersion)
+}
+
+// UpdateEndpoint stores the mutable settings of e (scope, lineage, team,
+// interval, enabled). ifVersion, if non-nil, must match the stored version.
+// Host, port and SNI identify the endpoint and do not change.
+func (tx *Tx) UpdateEndpoint(ctx context.Context, e *Endpoint, ifVersion *int64) error {
+	err := tx.versioned(ctx, "endpoints", e.ID, `UPDATE endpoints SET scope_id = $2, lineage_id = $3, team_id = $4,
+		interval_seconds = $5, enabled = $6, version = version + 1
+		WHERE id = $1 AND ($7::bigint IS NULL OR version = $7)`,
+		e.ID, e.ScopeID, e.LineageID, e.TeamID, e.IntervalSeconds, e.Enabled, ifVersion)
+	if err != nil {
+		return err
+	}
+	return tx.QueryRow(ctx, `SELECT version FROM endpoints WHERE id = $1`, e.ID).Scan(&e.Version)
+}
+
+// DeleteEndpoint removes an endpoint and its observations. Deployments that
+// use it for verification keep it in place.
+func (tx *Tx) DeleteEndpoint(ctx context.Context, id string) error {
+	return deleted(tx.Exec(ctx, `DELETE FROM endpoints WHERE id = $1`, id))
 }
 
 // ProbeNow makes an endpoint due immediately.

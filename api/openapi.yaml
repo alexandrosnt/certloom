@@ -290,6 +290,34 @@ paths:
         "400": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/scopes/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [endpoints]
+      summary: Show a probe scope (id or name)
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [endpoints]
+      summary: Change a probe scope; absent fields stay as they are
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, properties: { name: { type: string }, config: { type: object } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [endpoints]
+      summary: Delete a probe scope nothing else references
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /api/v1/endpoints:
     get:
       tags: [endpoints]
@@ -328,6 +356,36 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Versioned" }
         "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [endpoints]
+      summary: Change scope, team, lineage, interval or enabled; host, port and SNI are fixed
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                scope: { type: string }
+                team: { type: string, description: Team id or name; empty clears it }
+                lineage: { type: string, description: Lineage id or name; empty clears it }
+                interval_seconds: { type: integer, minimum: 60 }
+                enabled: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Versioned" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [endpoints]
+      summary: Delete an endpoint and its observations; open findings are resolved
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /api/v1/endpoints/{id}/probe:
     post:
       tags: [endpoints]
@@ -381,6 +439,34 @@ paths:
             schema: { type: object, required: [name], properties: { name: { type: string }, contact: { type: string } } }
       responses:
         "201": { $ref: "#/components/responses/Object" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/teams/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [ownership]
+      summary: Show a team (id or name)
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [ownership]
+      summary: Change a team; absent fields stay as they are
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, properties: { name: { type: string }, contact: { type: string } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [ownership]
+      summary: Delete a team nothing else references
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
   /api/v1/lineages:
     get:
@@ -474,6 +560,34 @@ paths:
         "201": { $ref: "#/components/responses/Object" }
         "400": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/channels/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [alerts]
+      summary: Show a notification channel
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [alerts]
+      summary: Change a notification channel; absent fields stay as they are
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, properties: { name: { type: string }, config: { type: object }, credential_ref: { type: string }, min_severity: { type: string, enum: [info, warning, critical] }, enabled: { type: boolean } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [alerts]
+      summary: Delete a notification channel nothing else references
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /api/v1/channels/{id}/test:
     post:
       tags: [alerts]
@@ -606,6 +720,34 @@ paths:
         "201": { $ref: "#/components/responses/Object" }
         "400": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/issuers/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [renewal]
+      summary: Show a issuer (id or name)
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [renewal]
+      summary: Change a issuer; absent fields stay as they are
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, properties: { name: { type: string }, email: { type: string }, profile: { type: string } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [renewal]
+      summary: Delete a issuer nothing else references
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /api/v1/issuers/{id}/eab:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     put:

@@ -63,6 +63,22 @@ func (tx *Tx) GetChannel(ctx context.Context, id string) (*Channel, error) {
 	return &c, notFound(err)
 }
 
+// UpdateChannel stores c's name, config, credential reference, minimum
+// severity and enabled flag. The kind does not change.
+func (tx *Tx) UpdateChannel(ctx context.Context, c *Channel) error {
+	tag, err := tx.Exec(ctx, `UPDATE notification_channels SET name = $2, config = $3, credential_ref = $4, min_severity = $5, enabled = $6
+		WHERE id = $1`, c.ID, c.Name, []byte(c.Config), c.CredentialRef, c.MinSeverity, c.Enabled)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return conflict(err)
+}
+
+// DeleteChannel removes a channel and its undelivered notifications.
+func (tx *Tx) DeleteChannel(ctx context.Context, id string) error {
+	return deleted(tx.Exec(ctx, `DELETE FROM notification_channels WHERE id = $1`, id))
+}
+
 // Notification is the payload delivered to channels. It contains no secrets.
 type Notification struct {
 	Event       string    `json:"event"` // finding.opened, finding.escalated, finding.resolved, test

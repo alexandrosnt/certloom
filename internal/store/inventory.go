@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/alexandrosnt/certloom/internal/certparse"
@@ -16,10 +17,26 @@ import (
 // ErrConflict signals a uniqueness violation.
 var ErrConflict = errors.New("already exists")
 
+// ErrInUse signals that a row cannot be deleted because others reference it.
+var ErrInUse = errors.New("in use")
+
 func conflict(err error) error {
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) && pe.Code == "23505" {
 		return ErrConflict
+	}
+	return err
+}
+
+// deleted maps the result of a DELETE: foreign-key violations become
+// ErrInUse naming the referencing table, and no rows become ErrNotFound.
+func deleted(tag pgconn.CommandTag, err error) error {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) && pe.Code == "23503" {
+		return fmt.Errorf("%w: still referenced by %s", ErrInUse, pe.TableName)
+	}
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return err
 }
@@ -83,6 +100,20 @@ func (tx *Tx) TeamByRef(ctx context.Context, ref string) (*Team, error) {
 	err := tx.QueryRow(ctx, `SELECT id, name, contact, created_at FROM teams WHERE id = $1 OR name = $1`, ref).
 		Scan(&t.ID, &t.Name, &t.Contact, &t.CreatedAt)
 	return t, notFound(err)
+}
+
+// UpdateTeam changes a team's name and contact.
+func (tx *Tx) UpdateTeam(ctx context.Context, t *Team) error {
+	tag, err := tx.Exec(ctx, `UPDATE teams SET name = $2, contact = $3 WHERE id = $1`, t.ID, t.Name, t.Contact)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return conflict(err)
+}
+
+// DeleteTeam removes a team that no lineage or endpoint references.
+func (tx *Tx) DeleteTeam(ctx context.Context, id string) error {
+	return deleted(tx.Exec(ctx, `DELETE FROM teams WHERE id = $1`, id))
 }
 
 // CertificateRow is a stored certificate plus inventory context.
