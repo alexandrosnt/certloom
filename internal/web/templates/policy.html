@@ -1,0 +1,22 @@
+{{define "content"}}
+<h1>Policy</h1>
+<dl class="kv">
+  <dt>Active version</dt><dd>{{if .D.P.Version}}{{.D.P.Version}}{{else}}built-in defaults (no policy applied yet){{end}}</dd>
+  {{if .D.P.Version}}<dt>Applied by</dt><dd>{{.D.P.CreatedBy}}</dd>
+  <dt>Applied</dt><dd>{{ts .D.P.CreatedAt}}</dd>{{end}}
+</dl>
+<p class="muted">The policy sets expiry thresholds, key requirements, probing, approvals, exceptions, templates and DNS rules. Every apply creates a new version and is recorded in the audit log. The same file works with <code>certloom policy plan</code> and <code>certloom policy apply</code>.</p>
+{{if .D.CanManage}}
+<h2>Edit</h2>
+{{if .D.Error}}<p class="error" role="alert">{{.D.Error}}</p>{{end}}
+<form method="post" action="/policy/plan" class="stack wide">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="base" value="{{.D.P.Version}}">
+  <label>Policy (YAML) <textarea name="source" rows="28" spellcheck="false" required>{{.D.Source}}</textarea></label>
+  <button type="submit">Review changes</button>
+</form>
+{{else}}
+<h2>Source</h2>
+<pre class="source">{{.D.Source}}</pre>
+{{end}}
+{{end}}

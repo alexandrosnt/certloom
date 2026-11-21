@@ -20,6 +20,9 @@
     <a href="/agents" {{if eq .Nav "agents"}}aria-current="page"{{end}}>Agents</a>
     <a href="/deployments" {{if eq .Nav "deployments"}}aria-current="page"{{end}}>Deployments</a>
     <a href="/runs" {{if eq .Nav "runs"}}aria-current="page"{{end}}>Runs</a>
+    <a href="/policy" {{if eq .Nav "policy"}}aria-current="page"{{end}}>Policy</a>
+    <a href="/channels" {{if eq .Nav "channels"}}aria-current="page"{{end}}>Channels</a>
+    {{if can .Principal "members:manage"}}<a href="/members" {{if eq .Nav "members"}}aria-current="page"{{end}}>Members</a>{{end}}
     {{if can .Principal "audit:view"}}<a href="/audit" {{if eq .Nav "audit"}}aria-current="page"{{end}}>Audit</a>{{end}}
   </nav>
   <form method="post" action="/logout" class="who">

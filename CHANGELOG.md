@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- Web UI pages for members, policy and channels. Owners add and remove OIDC members
+  (removal goes through a confirmation page; you cannot remove yourself there). The
+  policy page shows the active version; with `policy:manage` you edit the YAML, review
+  the same impact plan as `certloom policy plan`, then apply. An apply is refused if
+  another version was applied after the plan was shown. Channels can be listed, created
+  (webhook or email, secrets only as `env:`/`file:` references) and sent a test.
 - Event webhooks (ADR-0021): `certloom webhook create|list|show|deliveries|redeliver|rotate-secret|enable|disable|delete`.
   Endpoints subscribe to typed events (`docs/events.md`: certificate.issued, renewal.*,
   approval.*, exception.*, finding.*, agent.*, ...) and receive them signed per Standard
@@ -85,6 +91,8 @@
 - Docker image and a Compose setup with a tested backup/restore procedure.
 
 ### Fixed
+- The "Endpoint added" confirmation in the web UI was never shown: messages containing a
+  semicolon were dropped by the query parser.
 - An ARI check that was still running when a renewal finished could overwrite the new
   certificate's schedule with the old certificate's, delaying the next ARI check by a day.
 - Agents reported `0.0.0-dev` as their version instead of the version they were built with.

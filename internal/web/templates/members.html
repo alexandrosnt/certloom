@@ -1,0 +1,35 @@
+{{define "content"}}
+<h1>Members</h1>
+<p class="muted">Members sign in with your identity provider (OIDC) using their verified email address. The role decides what they can see and change. API tokens are managed with <code>certloom token</code>.</p>
+{{if .D.Members}}
+<table>
+<thead><tr><th>Email</th><th>Role</th><th>Identity provider</th><th>Added by</th><th>Added</th><th></th></tr></thead>
+<tbody>
+{{range .D.Members}}
+<tr>
+  <td>{{.M.Email}}{{if .Self}} <span class="muted">(you)</span>{{end}}</td>
+  <td>{{.M.Role}}</td>
+  <td class="wrap">{{.M.Issuer}}</td>
+  <td>{{.M.CreatedBy}}</td>
+  <td>{{ts .M.CreatedAt}}</td>
+  <td>{{if not .Self}}<a href="/members/{{.M.ID}}/remove">Remove</a>{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No members yet.</p>{{end}}
+
+<h2>Add member</h2>
+{{if .D.OIDC}}
+<form method="post" action="/members" class="stack">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label>Email <input name="email" type="email" required autocomplete="off" placeholder="alice@example.com"></label>
+  <label>Role
+    <select name="role" required>{{range .D.Roles}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+  </label>
+  <button type="submit">Add member</button>
+</form>
+{{else}}
+<p class="muted">Members need OIDC sign-in, which is not configured on this server. Until then, use API tokens (<code>certloom token create</code>).</p>
+{{end}}
+{{end}}

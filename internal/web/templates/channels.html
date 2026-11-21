@@ -1,0 +1,55 @@
+{{define "content"}}
+<h1>Channels</h1>
+<p class="muted">Channels receive alerts at or above their minimum severity. Webhook payloads are HMAC-signed. Secrets stay on the server: a channel stores a reference such as <code>env:CERTLOOM_WEBHOOK_SECRET</code> or <code>file:/run/secrets/smtp</code>, never the value. For event streams to other systems, see <code>certloom webhook</code>.</p>
+{{if .D.Channels}}
+<table>
+<thead><tr><th>Name</th><th>Kind</th><th>Destination</th><th>Min severity</th><th>Credential</th><th>State</th><th></th></tr></thead>
+<tbody>
+{{range .D.Channels}}
+<tr>
+  <td>{{.C.Name}}</td>
+  <td>{{.C.Kind}}</td>
+  <td class="wrap">{{.Target}}</td>
+  <td><span class="sev {{.C.MinSeverity}}">{{.C.MinSeverity}}</span></td>
+  <td>{{if .C.CredentialRef}}<code>{{.C.CredentialRef}}</code>{{else}}<span class="muted">none</span>{{end}}</td>
+  <td>{{if .C.Enabled}}enabled{{else}}disabled{{end}}</td>
+  <td>{{if $.D.CanManage}}<form method="post" action="/channels/{{.C.ID}}/test"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button type="submit" class="link">Send test</button></form>{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No channels yet. Without a channel, alerts are only shown here.</p>{{end}}
+
+{{if .D.CanManage}}
+<h2>Add webhook channel</h2>
+<form method="post" action="/channels" class="stack">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="kind" value="webhook">
+  <label>Name <input name="name" required placeholder="oncall"></label>
+  <label>URL <input name="url" type="url" required placeholder="https://hooks.example.com/certloom"></label>
+  <label class="check"><input type="checkbox" name="allow_private"> Allow private or loopback destinations (internal receivers)</label>
+  <label>Signing secret reference (optional) <input name="credential_ref" placeholder="env:CERTLOOM_WEBHOOK_SECRET"></label>
+  <label>Minimum severity {{template "severity"}}</label>
+  <button type="submit">Add webhook channel</button>
+</form>
+
+<h2>Add email channel</h2>
+<form method="post" action="/channels" class="stack">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="kind" value="email">
+  <label>Name <input name="name" required placeholder="pki-team"></label>
+  <label>SMTP host <input name="host" required placeholder="smtp.example.com"></label>
+  <label>SMTP port <input name="port" type="number" min="1" max="65535" value="587"></label>
+  <label>TLS
+    <select name="tls"><option value="starttls">STARTTLS</option><option value="implicit">Implicit TLS</option></select>
+  </label>
+  <label>SMTP username (optional) <input name="username" autocomplete="off"></label>
+  <label>Password reference (optional) <input name="credential_ref" placeholder="env:CERTLOOM_SMTP_PASSWORD"></label>
+  <label>From <input name="from" type="email" required placeholder="certloom@example.com"></label>
+  <label>To (comma-separated) <input name="to" required placeholder="pki@example.com, oncall@example.com"></label>
+  <label>Minimum severity {{template "severity"}}</label>
+  <button type="submit">Add email channel</button>
+</form>
+{{end}}
+{{end}}
+{{define "severity"}}<select name="min_severity"><option value="info">info</option><option value="warning" selected>warning</option><option value="critical">critical</option></select>{{end}}

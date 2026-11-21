@@ -1,0 +1,25 @@
+{{define "content"}}
+{{$p := .D.Plan}}
+<h1>Review policy change</h1>
+<p>Applying this creates version {{add1 $p.CurrentVersion}} (active: {{if $p.CurrentVersion}}version {{$p.CurrentVersion}}{{else}}built-in defaults{{end}}). {{$p.Evaluated}} certificates were evaluated against the new thresholds.</p>
+{{if $p.Changes}}
+<table>
+<thead><tr><th>Check</th><th>Finding now</th><th>Finding after</th><th>Certificates</th></tr></thead>
+<tbody>
+{{range $p.Changes}}
+<tr><td>{{.Check}}</td><td>{{if .From}}<span class="sev {{.From}}">{{.From}}</span>{{else}}<span class="muted">none</span>{{end}}</td>
+<td>{{if .To}}<span class="sev {{.To}}">{{.To}}</span>{{else}}<span class="muted">none</span>{{end}}</td><td>{{.Count}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No certificate findings change.</p>{{end}}
+<form method="post" action="/policy/apply" class="actions">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="base" value="{{.D.Base}}">
+  <input type="hidden" name="source" value="{{.D.Source}}">
+  <button type="submit">Apply version {{add1 $p.CurrentVersion}}</button>
+  <a href="/policy">Cancel</a>
+</form>
+<h2>New policy</h2>
+<pre class="source">{{.D.Source}}</pre>
+{{end}}

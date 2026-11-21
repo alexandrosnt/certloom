@@ -43,6 +43,13 @@ type PolicyPlan struct {
 // ApplyPolicy validates src, computes its impact on current certificate
 // findings (plan), and stores it as a new version unless dryRun.
 func (s *Service) ApplyPolicy(ctx context.Context, p authz.Principal, src []byte, dryRun bool) (*PolicyPlan, error) {
+	return s.ApplyPolicyOver(ctx, p, src, dryRun, -1)
+}
+
+// ApplyPolicyOver is ApplyPolicy that refuses to apply when the active version
+// is no longer base, so a plan reviewed against one version cannot silently
+// replace a newer one. A negative base skips the check.
+func (s *Service) ApplyPolicyOver(ctx context.Context, p authz.Principal, src []byte, dryRun bool, base int) (*PolicyPlan, error) {
 	doc, err := policy.Parse(src)
 	if err != nil {
 		return nil, invalid("%v", err)
@@ -54,6 +61,9 @@ func (s *Service) ApplyPolicy(ctx context.Context, p authz.Principal, src []byte
 			return err
 		}
 		plan.CurrentVersion = cur.Version
+		if base >= 0 && cur.Version != base {
+			return invalid("the active policy is now version %d, not %d; review the plan again", cur.Version, base)
+		}
 		oldP, newP := cur.Document.Checks(), doc.Checks()
 		now := s.now()
 		counts := map[PolicyChange]int{}

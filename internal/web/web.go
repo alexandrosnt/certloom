@@ -108,6 +108,7 @@ func New(svc *app.Service, log *slog.Logger) *UI {
 			}
 			return *s
 		},
+		"add1":        func(n int) int { return n + 1 },
 		"runClass":    runClass,
 		"healthClass": healthClass,
 	}
@@ -170,6 +171,16 @@ func (u *UI) Handler() http.Handler {
 	page("GET /runs", u.runs)
 	page("GET /runs/{id}", u.run)
 	page("POST /runs/{id}/cancel", u.cancelRun)
+	page("GET /members", u.members)
+	page("POST /members", u.addMember)
+	page("GET /members/{id}/remove", u.confirmRemoveMember)
+	page("POST /members/{id}/remove", u.removeMember)
+	page("GET /policy", u.policy)
+	page("POST /policy/plan", u.planPolicy)
+	page("POST /policy/apply", u.applyPolicy)
+	page("GET /channels", u.channels)
+	page("POST /channels", u.addChannel)
+	page("POST /channels/{id}/test", u.testChannel)
 	page("GET /audit", u.audit)
 	return mux
 }
@@ -410,7 +421,7 @@ func (u *UI) addEndpoint(w http.ResponseWriter, r *http.Request, p authz.Princip
 	if err != nil {
 		return err
 	}
-	http.Redirect(w, r, "/endpoints/"+e.ID+"?flash=Endpoint+added;+first+probe+runs+within+seconds", http.StatusSeeOther)
+	http.Redirect(w, r, "/endpoints/"+e.ID+"?flash="+url.QueryEscape("Endpoint added. The first probe runs within seconds."), http.StatusSeeOther)
 	return nil
 }
 

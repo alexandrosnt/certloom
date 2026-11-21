@@ -29,7 +29,6 @@ Not done yet, roughly in the order I want to tackle it.
   the owner role needs `CREATEROLE` (PG 16+), because the first migration creates
   `certloom_app`.
 - `test/acme` pulls `pebble:latest`; pin it.
-- UI pages for members, policy and channels (CLI only for now).
 - `certloom schedule preview` (next renewal and window times with reasons).
 - Rate limits are per process.
 - Only one `certloomd` replica has been tested.

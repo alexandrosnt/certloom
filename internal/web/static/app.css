@@ -56,3 +56,10 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 .login { max-width: 380px; margin: 60px auto; display: grid; gap: 12px; }
 .login form { display: grid; gap: 8px; }
 .foot { max-width: 1200px; margin: 30px auto; padding: 0 16px 20px; color: var(--muted); font-size: 12px; }
+form.stack.wide { max-width: 900px; }
+form.stack label.check { display: flex; gap: 8px; align-items: center; }
+form.actions { display: flex; gap: 14px; align-items: center; margin: 14px 0; }
+textarea { font: 13px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); width: 100%; resize: vertical; }
+pre.source { font: 13px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+button.danger { background: var(--crit); border-color: var(--crit); }
+td form { margin: 0; }
