@@ -5,7 +5,6 @@ Not done yet, roughly in the order I want to tackle it.
 ## Renewal
 - No command to change a deployment's issuer (e.g. staging to production); today it
   means recreating the deployment.
-- EAB (M3).
 - `certloom-dns-lego` plugin: many lego providers keep the record id in memory between
   present and cleanup, so they need a long-running plugin (HTTP transport) or a
   per-provider answer.
@@ -13,6 +12,9 @@ Not done yet, roughly in the order I want to tackle it.
   not `resolvers`; split-horizon setups may need an option to check through the
   configured resolvers only.
 - Cloudflare DNS has only mock-API tests; run it once live against a test zone.
+- EAB: live runs against a commercial CA (only Pebble so far), and recording per CA
+  whether accounts survive revocation of the key that registered them.
+- EAB keys come from the database only; vault references with ADR-0009 Phase 6.
 - Central DNS credentials come from the database only; Vault and cloud secret-manager
   references are planned with the ADR-0009 Phase 6 providers (ADR-0018).
 - No web UI for approvals and exceptions yet (API and CLI only).

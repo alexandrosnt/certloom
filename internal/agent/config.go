@@ -35,6 +35,20 @@ type Config struct {
 	// CentralDNSSolvers: set false to refuse solvers and credentials sent by the
 	// control plane (ADR-0018); only dns_solvers above are used then.
 	CentralDNSSolvers *bool `json:"central_dns_solvers,omitempty"`
+	// ACMEEAB holds External Account Binding keys for CAs that require them.
+	// A key here is used instead of one sent by the control plane.
+	ACMEEAB []EABConfig `json:"acme_eab,omitempty"`
+	// CentralEAB: set false to refuse EAB keys sent by the control plane
+	// (ADR-0019).
+	CentralEAB *bool `json:"central_eab,omitempty"`
+}
+
+// EABConfig is a host-local EAB key for one ACME directory.
+type EABConfig struct {
+	DirectoryURL string `json:"directory_url"`
+	KID          string `json:"kid"`
+	// HMACFile holds the base64url HMAC key as issued by the CA.
+	HMACFile string `json:"hmac_file"`
 }
 
 // TargetConfig is a locally configured deployment target.
@@ -100,6 +114,7 @@ func (c *Config) Validate() error {
 		seen[t.Name] = true
 	}
 	p = append(p, c.validateDNS()...)
+	p = append(p, c.validateEAB()...)
 	if len(p) > 0 {
 		return errors.New("invalid agent config: " + strings.Join(p, "; "))
 	}
@@ -124,4 +139,36 @@ func (c *Config) taskAllowed(t string) bool {
 
 func (c *Config) centralDNSAllowed() bool {
 	return c.CentralDNSSolvers == nil || *c.CentralDNSSolvers
+}
+
+func (c *Config) centralEABAllowed() bool {
+	return c.CentralEAB == nil || *c.CentralEAB
+}
+
+func (c *Config) validateEAB() []string {
+	var p []string
+	seen := map[string]bool{}
+	for _, e := range c.ACMEEAB {
+		switch {
+		case !strings.HasPrefix(e.DirectoryURL, "https://"):
+			p = append(p, fmt.Sprintf("acme_eab: directory_url %q must be an https URL", e.DirectoryURL))
+		case seen[e.DirectoryURL]:
+			p = append(p, "acme_eab: duplicate directory_url "+e.DirectoryURL)
+		case e.KID == "":
+			p = append(p, "acme_eab "+e.DirectoryURL+": kid is required")
+		case !filepath.IsAbs(e.HMACFile):
+			p = append(p, "acme_eab "+e.DirectoryURL+": hmac_file must be an absolute path")
+		}
+		seen[e.DirectoryURL] = true
+	}
+	return p
+}
+
+func (c *Config) localEAB(directoryURL string) *EABConfig {
+	for i := range c.ACMEEAB {
+		if c.ACMEEAB[i].DirectoryURL == directoryURL {
+			return &c.ACMEEAB[i]
+		}
+	}
+	return nil
 }

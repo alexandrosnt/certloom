@@ -599,6 +599,62 @@ paths:
         "201": { $ref: "#/components/responses/Object" }
         "400": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/issuers/{id}/eab:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    put:
+      tags: [renewal]
+      summary: Set an issuer's External Account Binding mode (ADR-0019, issuers:manage). The HMAC key is encrypted with the KEK, never returned, and reaches an agent only sealed to it until it has registered an account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [none, reusable, single_use] }
+                kid: { type: string, description: Key id (mode reusable only) }
+                hmac: { type: string, writeOnly: true, description: Base64url HMAC key (mode reusable only; omit to keep the stored one) }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/issuers/{id}/eab-keys:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [renewal]
+      summary: List an issuer's single-use EAB keys and their state (available, claimed, consumed, failed); HMAC keys are never returned
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+        "404": { $ref: "#/components/responses/Problem" }
+    post:
+      tags: [renewal]
+      summary: Add a single-use EAB key to the issuer's pool (issuers:manage); each key registers one agent's account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kid, hmac]
+              properties:
+                kid: { type: string }
+                hmac: { type: string, writeOnly: true }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/issuers/{id}/eab-keys/{key}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - { name: key, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [renewal]
+      summary: Remove an available or failed single-use key (issuers:manage)
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/Problem" }
   /api/v1/dns-solvers:
     get:
       tags: [renewal]

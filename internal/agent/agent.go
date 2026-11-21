@@ -268,10 +268,15 @@ func (a *Agent) Heartbeat(ctx context.Context) error {
 		}
 	}
 	hb.DNSSolvers = a.cfg.dnsSolverInfo()
-	if a.cfg.centralDNSAllowed() {
+	hb.NoCentralDNS, hb.NoCentralEAB = !a.cfg.centralDNSAllowed(), !a.cfg.centralEABAllowed()
+	if !hb.NoCentralDNS || !hb.NoCentralEAB {
 		a.mu.Lock()
 		hb.SealKey = a.sealPub
 		a.mu.Unlock()
+	}
+	hb.ACMEAccounts = a.accountSlots()
+	for _, e := range a.cfg.ACMEEAB {
+		hb.LocalEAB = append(hb.LocalEAB, e.DirectoryURL)
 	}
 	return a.do(ctx, http.MethodPost, agentproto.PathHeartbeat, hb, nil)
 }

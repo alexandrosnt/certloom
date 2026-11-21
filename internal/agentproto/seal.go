@@ -59,3 +59,12 @@ func SealPublicKey(priv []byte) ([]byte, error) {
 	}
 	return k.PublicKey().Bytes(), nil
 }
+
+// SealEABInfo binds a sealed EAB HMAC to one agent, task and issuer. The
+// label differs from SealInfo so a DNS secret never opens as an EAB key.
+func SealEABInfo(agentID, taskID, issuerID string) []byte {
+	return []byte("certloom eab v1\x00" + agentID + "\x00" + taskID + "\x00" + issuerID)
+}
+
+// AccountSlot is the account slot of an issuer that uses EAB.
+func AccountSlot(issuerID string) string { return "issuer:" + issuerID }

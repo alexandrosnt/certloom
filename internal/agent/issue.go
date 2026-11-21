@@ -25,7 +25,6 @@ import (
 	"github.com/go-acme/lego/v5/certificate"
 	"github.com/go-acme/lego/v5/lego"
 	"github.com/go-acme/lego/v5/providers/http/webroot"
-	"github.com/go-acme/lego/v5/registration"
 )
 
 // runDir is where a run's key and certificate live.
@@ -110,8 +109,12 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 	if err != nil {
 		return nil, err
 	}
-	client, err := a.acmeClient(ctx, p)
+	client, err := a.acmeClient(ctx, t, p)
 	if err != nil {
+		var re *registrationError
+		if errors.As(err, &re) {
+			return re.output(), err
+		}
 		return nil, err
 	}
 	if err := a.setChallenge(client, tgt, t, p, dns01); err != nil {
@@ -126,13 +129,15 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 		res, err = client.Certificate.ObtainForCSR(ctx, req)
 	}
 	if err != nil {
-		return issueFailure(err), fmt.Errorf("acme: %w", err)
+		out := issueFailure(err)
+		out.AccountSlot = p.AccountSlot // the account exists even though the order failed
+		return out, fmt.Errorf("acme: %w", err)
 	}
 	// Keep a copy beside the key; deploy writes the chain the control plane validated.
 	if err := os.WriteFile(filepath.Join(dir, "issued.pem"), res.Certificate, 0o644); err != nil { //nolint:gosec // public certificate chain
 		return nil, err
 	}
-	return agentproto.IssueOutput{ChainPEM: string(res.Certificate)}, nil
+	return agentproto.IssueOutput{ChainPEM: string(res.Certificate), AccountSlot: p.AccountSlot}, nil
 }
 
 // setChallenge registers exactly one solver, so lego cannot fall back to
@@ -158,7 +163,7 @@ func (a *Agent) setChallenge(client *lego.Client, tgt *TargetConfig, t *agentpro
 
 // issueFailure extracts what the control plane needs to schedule the next
 // attempt: the ACME problem type and, for rate limits, the CA's Retry-After.
-func issueFailure(err error) any {
+func issueFailure(err error) agentproto.IssueOutput {
 	out := agentproto.IssueOutput{}
 	var rl *acme.RateLimitedError
 	if errors.As(err, &rl) {
@@ -169,9 +174,6 @@ func issueFailure(err error) any {
 	if out.ProblemType == "" && errors.As(err, &pd) {
 		out.ProblemType = pd.Type
 	}
-	if out.ProblemType == "" {
-		return nil
-	}
 	return out
 }
 
@@ -180,6 +182,7 @@ func issueFailure(err error) any {
 type acmeAccount struct {
 	Email        string                `json:"email"`
 	Registration *acme.ExtendedAccount `json:"registration"`
+	Slot         string                `json:"slot,omitempty"`
 	key          crypto.Signer
 }
 
@@ -205,14 +208,24 @@ func (a *Agent) acmeHTTPClient() (*http.Client, error) {
 		TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}, Proxy: http.ProxyFromEnvironment}}, nil
 }
 
-func (a *Agent) acmeClient(ctx context.Context, p agentproto.IssuePayload) (*lego.Client, error) {
-	h := sha256.Sum256([]byte(p.DirectoryURL))
-	dir := filepath.Join(a.cfg.StateDir, "acme", hex.EncodeToString(h[:8]))
+// accountDir holds one ACME account. Accounts without a slot keep the
+// directory-only path they had before slots existed.
+func (a *Agent) accountDir(directoryURL, slot string) string {
+	id := directoryURL
+	if slot != "" {
+		id += "\x00" + slot
+	}
+	h := sha256.Sum256([]byte(id))
+	return filepath.Join(a.cfg.StateDir, "acme", hex.EncodeToString(h[:8]))
+}
+
+func (a *Agent) acmeClient(ctx context.Context, t *agentproto.Task, p agentproto.IssuePayload) (*lego.Client, error) {
+	dir := a.accountDir(p.DirectoryURL, p.AccountSlot)
 	key, err := loadOrCreateKey(filepath.Join(dir, "account.key"))
 	if err != nil {
 		return nil, err
 	}
-	acct := &acmeAccount{Email: p.Email, key: key}
+	acct := &acmeAccount{Email: p.Email, Slot: p.AccountSlot, key: key}
 	if b, err := os.ReadFile(filepath.Join(dir, "account.json")); err == nil {
 		_ = json.Unmarshal(b, acct)
 	}
@@ -227,11 +240,11 @@ func (a *Agent) acmeClient(ctx context.Context, p agentproto.IssuePayload) (*leg
 		return nil, fmt.Errorf("acme directory: %w", err)
 	}
 	if acct.Registration == nil {
-		reg, err := client.Registration.Register(ctx, registration.RegisterOptions{TermsOfServiceAgreed: p.AgreeTOS})
+		reg, err := a.register(ctx, client, t, p)
 		if err != nil {
-			return nil, fmt.Errorf("acme account registration: %w", err)
+			return nil, err
 		}
-		acct.Registration = reg
+		acct.Registration, acct.Slot = reg, p.AccountSlot
 		b, _ := json.Marshal(acct)
 		if err := os.WriteFile(filepath.Join(dir, "account.json"), b, 0o600); err != nil {
 			return nil, err

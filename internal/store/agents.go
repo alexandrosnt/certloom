@@ -249,34 +249,48 @@ type Issuer struct {
 	AgreeTOS     bool      `json:"agree_tos"`
 	Profile      string    `json:"profile,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+	// EABMode is none, reusable or single_use (ADR-0019).
+	EABMode      string     `json:"eab_mode"`
+	EABKID       string     `json:"eab_kid,omitempty"`
+	HasEABHMAC   bool       `json:"has_eab_hmac,omitempty"`
+	EABUpdatedAt *time.Time `json:"eab_updated_at,omitempty"`
+
+	EABHMACCiphertext []byte `json:"-"`
+}
+
+const issuerCols = `id, name, kind, directory_url, email, agree_tos, profile, created_at, eab_mode, eab_kid, eab_hmac_ciphertext, eab_updated_at`
+
+func scanIssuer(r pgx.Row) (*Issuer, error) {
+	i := &Issuer{}
+	err := r.Scan(&i.ID, &i.Name, &i.Kind, &i.DirectoryURL, &i.Email, &i.AgreeTOS, &i.Profile, &i.CreatedAt,
+		&i.EABMode, &i.EABKID, &i.EABHMACCiphertext, &i.EABUpdatedAt)
+	i.HasEABHMAC = len(i.EABHMACCiphertext) > 0
+	return i, err
 }
 
 // CreateIssuer inserts an issuer.
 func (tx *Tx) CreateIssuer(ctx context.Context, i *Issuer, createdBy string) error {
 	i.ID, i.Kind = ids.New("iss"), "acme"
 	return conflict(tx.QueryRow(ctx, `INSERT INTO issuers (id, org_id, name, kind, directory_url, email, agree_tos, profile, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING created_at`, i.ID, tx.OrgID, i.Name, i.Kind, i.DirectoryURL, i.Email, i.AgreeTOS, i.Profile, createdBy).
-		Scan(&i.CreatedAt))
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING created_at, eab_mode`, i.ID, tx.OrgID, i.Name, i.Kind, i.DirectoryURL, i.Email, i.AgreeTOS, i.Profile, createdBy).
+		Scan(&i.CreatedAt, &i.EABMode))
 }
 
 // GetIssuer returns an issuer by id or name.
 func (tx *Tx) GetIssuer(ctx context.Context, ref string) (*Issuer, error) {
-	i := &Issuer{}
-	err := tx.QueryRow(ctx, `SELECT id, name, kind, directory_url, email, agree_tos, profile, created_at FROM issuers WHERE id = $1 OR name = $1`, ref).
-		Scan(&i.ID, &i.Name, &i.Kind, &i.DirectoryURL, &i.Email, &i.AgreeTOS, &i.Profile, &i.CreatedAt)
+	i, err := scanIssuer(tx.QueryRow(ctx, `SELECT `+issuerCols+` FROM issuers WHERE id = $1 OR name = $1`, ref))
 	return i, notFound(err)
 }
 
 // ListIssuers lists issuers.
 func (tx *Tx) ListIssuers(ctx context.Context) ([]Issuer, error) {
-	rows, err := tx.Query(ctx, `SELECT id, name, kind, directory_url, email, agree_tos, profile, created_at FROM issuers ORDER BY name`)
+	rows, err := tx.Query(ctx, `SELECT `+issuerCols+` FROM issuers ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Issuer, error) {
-		var i Issuer
-		err := r.Scan(&i.ID, &i.Name, &i.Kind, &i.DirectoryURL, &i.Email, &i.AgreeTOS, &i.Profile, &i.CreatedAt)
-		return i, err
+		i, err := scanIssuer(r)
+		return *i, err
 	})
 }
 

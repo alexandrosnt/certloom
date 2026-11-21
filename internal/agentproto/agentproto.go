@@ -118,6 +118,14 @@ type Heartbeat struct {
 	DNSSolvers []DNSSolver `json:"dns_solvers,omitempty"`
 	// SealKey is the agent's public HPKE key for secrets sent to it.
 	SealKey []byte `json:"seal_key,omitempty"`
+	// NoCentralDNS and NoCentralEAB are set when the host refuses central DNS
+	// solvers or central EAB credentials (agent config).
+	NoCentralDNS bool `json:"no_central_dns,omitempty"`
+	NoCentralEAB bool `json:"no_central_eab,omitempty"`
+	// ACMEAccounts lists the account slots this agent has registered.
+	ACMEAccounts []string `json:"acme_accounts,omitempty"`
+	// LocalEAB lists ACME directory URLs with EAB configured on the host.
+	LocalEAB []string `json:"local_eab,omitempty"`
 }
 
 // Task is the signed unit of work.
@@ -208,6 +216,19 @@ type IssuePayload struct {
 	Challenge string `json:"challenge,omitempty"`
 	// DNSSolvers are central solvers assigned to this agent (ADR-0018).
 	DNSSolvers []CentralDNSSolver `json:"dns_solvers,omitempty"`
+	// AccountSlot names the ACME account to use for issuers that need External
+	// Account Binding (AccountSlot(issuer id)); empty uses the account kept
+	// for the directory URL.
+	AccountSlot string `json:"account_slot,omitempty"`
+	// EAB is sent while the agent has not registered AccountSlot (ADR-0019).
+	EAB *SealedEAB `json:"eab,omitempty"`
+}
+
+// SealedEAB is an External Account Binding key: the key id in clear and the
+// HMAC key (base64url, as issued by the CA) sealed with SealEABInfo.
+type SealedEAB struct {
+	KID    string `json:"kid"`
+	Sealed []byte `json:"sealed"`
 }
 
 // KeyECDSAP256 is the only key algorithm agents generate so far.
@@ -221,6 +242,11 @@ type IssueOutput struct {
 	ProblemType string `json:"problem_type,omitempty"`
 	// RetryAfterSeconds is the CA's Retry-After for a rate-limited request.
 	RetryAfterSeconds int64 `json:"retry_after_seconds,omitempty"`
+	// AccountSlot is set once the agent holds a registered account for the
+	// task's slot, so the control plane can mark a single-use EAB key used.
+	AccountSlot string `json:"account_slot,omitempty"`
+	// EABRejected means the CA refused account registration with EAB.
+	EABRejected bool `json:"eab_rejected,omitempty"`
 }
 
 // DeployPayload activates the certificate issued in RunID on the target.
@@ -312,3 +338,10 @@ func SANAllowed(san string, allowed []string, wildcards bool) bool {
 	}
 	return false
 }
+
+// AcceptsCentralDNS reports whether central DNS solvers can be sent to the
+// agent. Older agents signal a refusal only by omitting the sealing key.
+func (h Heartbeat) AcceptsCentralDNS() bool { return len(h.SealKey) > 0 && !h.NoCentralDNS }
+
+// AcceptsCentralEAB reports whether EAB keys can be sent to the agent.
+func (h Heartbeat) AcceptsCentralEAB() bool { return len(h.SealKey) > 0 && !h.NoCentralEAB }

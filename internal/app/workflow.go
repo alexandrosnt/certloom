@@ -128,7 +128,7 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 			if err != nil {
 				return err
 			}
-			if len(central) == 0 || len(a.Capabilities.SealKey) == 0 {
+			if len(central) == 0 || !a.Capabilities.AcceptsCentralDNS() {
 				return invalid("agent %q has no dns solver: configure dns_solvers on the host, or assign a central one (certloom dns-solver assign)", a.Name)
 			}
 		}
@@ -634,6 +634,11 @@ func (s *Service) advance(ctx context.Context, tx *store.Tx, runID string, ext e
 			case "succeeded":
 				var out agentproto.IssueOutput
 				_ = json.Unmarshal(t.Result, &out)
+				if out.AccountSlot != "" {
+					if err := s.eabRegistered(ctx, tx, d.AgentID, out.AccountSlot); err != nil {
+						return err
+					}
+				}
 				leaf, err := s.acceptIssued(ctx, tx, d, out.ChainPEM)
 				if err != nil {
 					// A bad certificate is never deployed. Retrying would order again.
@@ -649,6 +654,18 @@ func (s *Service) advance(ctx context.Context, tx *store.Tx, runID string, ext e
 			default: // failed or expired
 				var out agentproto.IssueOutput
 				_ = json.Unmarshal(t.Result, &out)
+				if out.AccountSlot != "" {
+					if err := s.eabRegistered(ctx, tx, d.AgentID, out.AccountSlot); err != nil {
+						return err
+					}
+				}
+				if out.EABRejected || out.ProblemType == "urn:ietf:params:acme:error:externalAccountRequired" {
+					// Retrying with the same key would fail the same way.
+					if err := s.eabRejected(ctx, tx, d.IssuerID, d.AgentID); err != nil {
+						return err
+					}
+					return s.finish(ctx, tx, r, d, store.RunFailed, "the CA refused ACME account registration (External Account Binding): "+t.Error)
+				}
 				wait, detail, rateLimited := retryAfter(out)
 				if r.Attempt >= maxIssueAttempt && !rateLimited {
 					return s.finish(ctx, tx, r, d, store.RunFailed, fmt.Sprintf("issuance failed after %d attempts: %s", r.Attempt, t.Error))
@@ -804,15 +821,34 @@ func (s *Service) sendIssue(ctx context.Context, tx *store.Tx, r *store.Run, d *
 			}
 		}
 	}
-	var payload any = p
-	if d.Challenge == agentproto.ChallengeDNS01 {
-		a, err := tx.GetAgent(ctx, d.AgentID)
-		if err != nil {
+	a, err := tx.GetAgent(ctx, d.AgentID)
+	if err != nil {
+		return err
+	}
+	var eab *eabPlan
+	if iss.EABMode != store.EABNone {
+		p.AccountSlot = agentproto.AccountSlot(iss.ID)
+		var why string
+		if eab, why, err = s.planEAB(ctx, tx, iss, a); err != nil {
 			return err
 		}
+		if why != "" {
+			return s.finish(ctx, tx, r, d, store.RunFailed, why)
+		}
+	}
+	dns01 := d.Challenge == agentproto.ChallengeDNS01
+	var payload any = p
+	if dns01 || eab != nil {
 		payload = taskBound(func(taskID string) (any, error) {
 			var err error
-			p.DNSSolvers, err = s.centralSolversFor(ctx, tx, a, r.ID, taskID)
+			if dns01 {
+				if p.DNSSolvers, err = s.centralSolversFor(ctx, tx, a, r.ID, taskID); err != nil {
+					return nil, err
+				}
+			}
+			if eab != nil {
+				p.EAB, err = s.sealEAB(ctx, tx, eab, a, r.ID, taskID)
+			}
 			return p, err
 		})
 	}

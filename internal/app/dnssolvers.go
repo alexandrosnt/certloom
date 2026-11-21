@@ -245,7 +245,7 @@ func (s *Service) centralSolversFor(ctx context.Context, tx *store.Tx, a *store.
 	if err != nil || !ok {
 		return nil, err
 	}
-	if len(a.Capabilities.SealKey) == 0 {
+	if !a.Capabilities.AcceptsCentralDNS() {
 		return nil, nil
 	}
 	solvers, err := tx.ListDNSSolvers(ctx, a.ID)

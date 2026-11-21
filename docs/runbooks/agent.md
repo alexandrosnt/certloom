@@ -230,6 +230,45 @@ A run is `verified` only when **both** checks pass:
 Afterwards the deployment's next renewal time comes from the CA's ARI window when
 the CA offers one, and otherwise from 2/3 of the certificate's lifetime.
 
+### CAs that require External Account Binding
+
+Commercial ACME CAs (DigiCert, Sectigo, ZeroSSL, SSL.com, Google Trust Services) issue an
+EAB key id and HMAC key. Each agent registers its own ACME account with it once; after
+that the account key alone is used (ADR-0019). Give the key to certloom once:
+
+```sh
+# One key for any number of accounts (most CAs)
+certloom issuer set-eab digicert --mode reusable --kid "$KID" --hmac-stdin < hmac.txt
+
+# One key per account (Google Trust Services: each key registers one account and
+# expires 7 days after it was created). Add one key per agent, ahead of time.
+certloom issuer set-eab gts --mode single_use
+gcloud publicca external-account-keys create --format=json > key.json   # keyId, b64MacKey
+certloom issuer eab-key add gts --kid "$(jq -r .keyId key.json)" --expires-in 168h \
+    --hmac-stdin <<< "$(jq -r .b64MacKey key.json)"
+certloom issuer eab-key list gts
+```
+
+- The HMAC key is stored encrypted with the KEK, never returned, and sent to an agent only
+  sealed to it inside the issue task, until the agent reports the account as registered.
+- A single-use key is claimed by one agent, retried with that agent only, and marked
+  `consumed` once the account exists. An issuer finding (`eab_pool`) opens when more agents
+  wait for a key than the pool holds; `eab_key_expiring` when a claimed key is close to
+  expiry before registration.
+- When the CA refuses a key the run fails without retries and a single-use key is marked
+  `failed`; the next run claims another one.
+- A host can keep its own key instead:
+
+  ```yaml
+  acme_eab:
+    - directory_url: https://acme.example-ca.com/directory
+      kid: "..."
+      hmac_file: /etc/certloom-agent/eab.hmac   # mode 0600
+  central_eab: false   # optional: refuse keys sent by the control plane
+  ```
+
+  A host key for the directory wins over one sent by the control plane.
+
 ## Failure behavior
 
 | What happens | Result |

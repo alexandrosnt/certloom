@@ -79,15 +79,17 @@ func issuerCmd() *cobra.Command {
 	create.Flags().StringVar(&profile, "profile", "", "ACME profile, e.g. shortlived (optional)")
 	create.Flags().BoolVar(&agree, "agree-tos", false, "accept the CA's terms of service")
 	_ = create.MarkFlagRequired("directory")
-	cmd.AddCommand(create, listCmd("list", "List issuers", "/api/v1/issuers", "ID\tNAME\tDIRECTORY\tPROFILE",
+	cmd.AddCommand(create, listCmd("list", "List issuers", "/api/v1/issuers", "ID\tNAME\tDIRECTORY\tPROFILE\tEAB",
 		func(w io.Writer, raw json.RawMessage) {
 			var i struct {
 				ID, Name, Profile string
 				Dir               string `json:"directory_url"`
+				EAB               string `json:"eab_mode"`
 			}
 			_ = json.Unmarshal(raw, &i)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", i.ID, i.Name, i.Dir, i.Profile)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", i.ID, i.Name, i.Dir, i.Profile, i.EAB)
 		}))
+	cmd.AddCommand(issuerEABCmds()...)
 	return cmd
 }
 

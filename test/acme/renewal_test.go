@@ -218,8 +218,9 @@ func up(t *testing.T, web ...webStarter) *stack {
 
 // upOptions changes the default stack.
 type upOptions struct {
-	agentConfig string   // replaces agentConfig
-	pebbleArgs  []string // extra Pebble flags
+	agentConfig  string   // replaces agentConfig
+	pebbleArgs   []string // extra Pebble flags
+	pebbleConfig string   // replaces pebbleConfig
 	// before starts extra containers before Pebble; m2 is the shared directory.
 	before func(run func(name string, args ...string) string, m2 string)
 }
@@ -257,7 +258,10 @@ func upWith(t *testing.T, o upOptions, web ...webStarter) *stack {
 	m2 := filepath.Join(s.tmp, "m2")
 	_ = os.MkdirAll(m2, 0o755)
 	write := func(name, data string) { _ = os.WriteFile(filepath.Join(m2, name), []byte(data), 0o644) }
-	write("pebble.json", pebbleConfig)
+	if o.pebbleConfig == "" {
+		o.pebbleConfig = pebbleConfig
+	}
+	write("pebble.json", o.pebbleConfig)
 	write("nginx.conf", nginxConf)
 	if o.agentConfig == "" {
 		o.agentConfig = agentConfig

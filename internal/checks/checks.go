@@ -49,6 +49,9 @@ const (
 	CheckFingerprintChanged = "fingerprint_changed"
 	CheckLineageMismatch    = "lineage_mismatch"
 	CheckProbeFailed        = "probe_failed"
+	// Issuer checks (ADR-0019).
+	CheckEABPool        = "eab_pool"
+	CheckEABKeyExpiring = "eab_key_expiring"
 )
 
 // KnownCheck reports whether id is one of the check identifiers above.
@@ -77,6 +80,7 @@ func mk(check string, sev Severity, msg, remediation string) Finding {
 var checkVersions = map[string]int{
 	CheckExpiry: 1, CheckNotYetValid: 1, CheckHostnameMismatch: 1, CheckChainIncomplete: 1, CheckUntrusted: 1, CheckWeakKey: 1,
 	CheckWeakSignature: 1, CheckFingerprintChanged: 1, CheckLineageMismatch: 1, CheckProbeFailed: 1,
+	CheckEABPool: 1, CheckEABKeyExpiring: 1,
 }
 
 // Version returns a check's definition version (0 for unknown checks).
@@ -298,4 +302,12 @@ func human(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%d minutes", int(d.Minutes()))
 	}
+}
+
+// New builds a finding for checks evaluated outside this package; facts
+// define the condition, as for the built-in checks.
+func New(check string, sev Severity, msg, remediation string, facts ...string) Finding {
+	f := mk(check, sev, msg, remediation)
+	f.Fingerprint = fingerprint(check, facts...)
+	return f
 }

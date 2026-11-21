@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- ACME External Account Binding (ADR-0019): `certloom issuer set-eab --mode none|reusable|single_use`
+  and `certloom issuer eab-key add|list|delete`. HMAC keys are stored encrypted with the
+  KEK, never returned, and sent sealed to an agent only until it has registered its
+  account (account slot per issuer, reported in heartbeats). Single-use keys (Google
+  Trust Services) form a pool: one key is claimed per agent, consumed on registration,
+  marked failed when the CA refuses it; issuer findings `eab_pool` and
+  `eab_key_expiring` warn before renewals stall. Agents can keep their own key
+  (`acme_eab`, wins over a central one) or refuse central keys (`central_eab: false`).
 - DNS-01 challenges and wildcard certificates (ADR-0017). Agents get `dns_solvers` with
   built-in `rfc2136` (TSIG) and `cloudflare` providers, plus executable plugins for any
   other DNS service (protocol in `docs/dns-plugins.md`, Go SDK in package `dnsplugin`).

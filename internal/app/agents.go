@@ -140,7 +140,17 @@ func (s *Service) RenewAgentCert(ctx context.Context, id AgentIdentity, csrPEM s
 
 // AgentHeartbeat records liveness and the agent's locally configured targets.
 func (s *Service) AgentHeartbeat(ctx context.Context, id AgentIdentity, hb agentproto.Heartbeat) error {
-	return s.DB.WithOrg(ctx, id.OrgID, func(tx *store.Tx) error { return tx.RecordHeartbeat(ctx, id.AgentID, hb) })
+	return s.DB.WithOrg(ctx, id.OrgID, func(tx *store.Tx) error {
+		if err := tx.RecordHeartbeat(ctx, id.AgentID, hb); err != nil {
+			return err
+		}
+		for _, slot := range hb.ACMEAccounts {
+			if err := s.eabRegistered(ctx, tx, id.AgentID, slot); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // AgentPoll returns tasks for the agent, waiting up to wait for new ones.
