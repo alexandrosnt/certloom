@@ -133,6 +133,12 @@ func (s *Server) Handler() http.Handler {
 	h("POST /api/v1/deployments", s.createDeployment)
 	h("POST /api/v1/deployments/{id}/renew", s.renewDeployment)
 	h("PUT /api/v1/deployments/{id}/window", s.setDeploymentWindow)
+	h("POST /api/v1/deployments/{id}/request-approval", s.requestDeploymentApproval)
+	h("POST /api/v1/deployments/{id}/revoke-approval", s.revokeDeploymentApproval)
+	h("GET /api/v1/approvals", s.listApprovals)
+	h("GET /api/v1/approvals/{id}", s.getApproval)
+	h("POST /api/v1/approvals/{id}/approve", s.decideApproval(true))
+	h("POST /api/v1/approvals/{id}/deny", s.decideApproval(false))
 	h("GET /api/v1/runs", s.listRuns)
 	h("GET /api/v1/runs/{id}", s.getRun)
 	h("POST /api/v1/runs/{id}/cancel", s.cancelRun)
@@ -1003,5 +1009,68 @@ func (s *Server) cancelRun(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	w.WriteHeader(204)
+	return nil
+}
+
+// ---- approvals ----
+
+func (s *Server) requestDeploymentApproval(w http.ResponseWriter, r *http.Request) error {
+	a, err := s.Svc.RequestDeploymentApproval(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 201, a)
+	return nil
+}
+
+func (s *Server) listApprovals(w http.ResponseWriter, r *http.Request) error {
+	v, err := s.Svc.ListApprovals(r.Context(), PrincipalFrom(r.Context()), r.URL.Query().Get("state"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, items(v))
+	return nil
+}
+
+func (s *Server) getApproval(w http.ResponseWriter, r *http.Request) error {
+	a, err := s.Svc.GetApproval(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, a)
+	return nil
+}
+
+func (s *Server) decideApproval(approve bool) func(http.ResponseWriter, *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		var req struct {
+			Reason string `json:"reason,omitempty"`
+		}
+		if r.ContentLength != 0 {
+			if err := decode(r, &req); err != nil {
+				return err
+			}
+		}
+		a, err := s.Svc.DecideApproval(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"), approve, req.Reason)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, a)
+		return nil
+	}
+}
+
+func (s *Server) revokeDeploymentApproval(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	d, err := s.Svc.RevokeDeploymentApproval(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"), req.Reason)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, d)
 	return nil
 }

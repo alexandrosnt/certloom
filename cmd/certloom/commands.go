@@ -35,11 +35,16 @@ func tsp(t *time.Time) string {
 
 // listCmd builds a simple "list" command over an items endpoint.
 func listCmd(use, short, path, header string, row func(w io.Writer, raw json.RawMessage)) *cobra.Command {
+	return listCmdPath(use, short, func() string { return path }, header, row)
+}
+
+// listCmdPath is listCmd for paths that depend on flags.
+func listCmdPath(use, short string, path func() string, header string, row func(w io.Writer, raw json.RawMessage)) *cobra.Command {
 	return &cobra.Command{Use: use, Short: short, RunE: run(func(c *client, _ []string) error {
 		var v struct {
 			Items []json.RawMessage `json:"items"`
 		}
-		if err := c.do("GET", path, nil, &v); err != nil {
+		if err := c.do("GET", path(), nil, &v); err != nil {
 			return err
 		}
 		if asJSON() {

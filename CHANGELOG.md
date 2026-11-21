@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- Approvals with separation of duties (ADR-0015): roles `requester`, `approver`,
+  `deployment_operator` and `issuer_admin`; policy `approvals.deployments: required`,
+  `approvals.expireAfter` and `approvals.channels`; `certloom approval
+  list|show|approve|deny` and `certloom deployment request-approval|revoke-approval`.
+  An approval covers the effective deployment spec (names, key algorithm, issuer,
+  target), so renewals of an approved spec stay automatic while any change to it, or a
+  revocation, stops runs before they touch the target. Nobody decides their own request,
+  including through a token they created.
 - Tested against Let's Encrypt staging: issuance, renewal with `replaces`, ARI
   scheduling and rollback on a real host.
 - Maintenance windows per deployment (`certloom deployment set-window`, e.g.

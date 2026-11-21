@@ -299,16 +299,24 @@ type Deployment struct {
 	// MaintenanceWindow limits when the certificate may be activated (empty: any time).
 	MaintenanceWindow string `json:"maintenance_window,omitempty"`
 	// WindowEmergency is "block" or "renew_outside_window".
-	WindowEmergency string    `json:"window_emergency"`
-	CreatedAt       time.Time `json:"created_at"`
+	WindowEmergency string `json:"window_emergency"`
+	// Approval is "pending", "approved", "denied" or "revoked"; see
+	// DeploymentSpec and ApprovalCovers.
+	Approval string `json:"approval"`
+	// ApprovedSpecSHA256 is the spec digest that was approved (nil: created
+	// before approvals existed).
+	ApprovedSpecSHA256 *string `json:"approved_spec_sha256,omitempty"`
+	// KeyAlgorithm is the key the agent generates (only "ecdsa-p256" so far).
+	KeyAlgorithm string    `json:"key_algorithm"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
-const deploymentCols = `id, lineage_id, agent_id, target, issuer_id, endpoint_id, sans, target_seq, renew_at, renew_reason, ari_next_check, enabled, created_at, maintenance_window, window_emergency`
+const deploymentCols = `id, lineage_id, agent_id, target, issuer_id, endpoint_id, sans, target_seq, renew_at, renew_reason, ari_next_check, enabled, created_at, maintenance_window, window_emergency, approval, approved_spec_sha256, key_algorithm`
 
 func scanDeployment(r pgx.Row) (*Deployment, error) {
 	d := &Deployment{}
 	err := r.Scan(&d.ID, &d.LineageID, &d.AgentID, &d.Target, &d.IssuerID, &d.EndpointID, &d.SANs, &d.TargetSeq, &d.RenewAt, &d.RenewReason,
-		&d.ARINextAt, &d.Enabled, &d.CreatedAt, &d.MaintenanceWindow, &d.WindowEmergency)
+		&d.ARINextAt, &d.Enabled, &d.CreatedAt, &d.MaintenanceWindow, &d.WindowEmergency, &d.Approval, &d.ApprovedSpecSHA256, &d.KeyAlgorithm)
 	return d, notFound(err)
 }
 
@@ -318,10 +326,16 @@ func (tx *Tx) CreateDeployment(ctx context.Context, d *Deployment, createdBy str
 	if d.WindowEmergency == "" {
 		d.WindowEmergency = "block"
 	}
+	if d.Approval == "" {
+		d.Approval = "approved"
+	}
+	if d.KeyAlgorithm == "" {
+		d.KeyAlgorithm = "ecdsa-p256"
+	}
 	return conflict(tx.QueryRow(ctx, `INSERT INTO deployments (id, org_id, lineage_id, agent_id, target, issuer_id, endpoint_id, sans, created_by,
-		maintenance_window, window_emergency)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING created_at`, d.ID, tx.OrgID, d.LineageID, d.AgentID, d.Target, d.IssuerID, d.EndpointID, d.SANs, createdBy,
-		d.MaintenanceWindow, d.WindowEmergency).
+		maintenance_window, window_emergency, approval, approved_spec_sha256, key_algorithm)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING created_at`, d.ID, tx.OrgID, d.LineageID, d.AgentID, d.Target, d.IssuerID, d.EndpointID, d.SANs, createdBy,
+		d.MaintenanceWindow, d.WindowEmergency, d.Approval, d.ApprovedSpecSHA256, d.KeyAlgorithm).
 		Scan(&d.CreatedAt))
 }
 
@@ -408,21 +422,23 @@ func Terminal(state string) bool {
 
 // Run is a renewal workflow execution.
 type Run struct {
-	ID             string     `json:"id"`
-	DeploymentID   string     `json:"deployment_id"`
-	State          string     `json:"state"`
-	Reason         string     `json:"reason"`
-	Attempt        int        `json:"attempt"`
-	CurrentTaskID  *string    `json:"current_task_id,omitempty"`
-	PreviousSHA256 *string    `json:"previous_sha256,omitempty"`
-	IssuedSHA256   *string    `json:"issued_sha256,omitempty"`
-	Error          string     `json:"error,omitempty"`
-	CreatedBy      string     `json:"created_by"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	NextAttemptAt  *time.Time `json:"next_attempt_at,omitempty"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
-	Steps          []RunStep  `json:"steps,omitempty"`
+	ID             string  `json:"id"`
+	DeploymentID   string  `json:"deployment_id"`
+	State          string  `json:"state"`
+	Reason         string  `json:"reason"`
+	Attempt        int     `json:"attempt"`
+	CurrentTaskID  *string `json:"current_task_id,omitempty"`
+	PreviousSHA256 *string `json:"previous_sha256,omitempty"`
+	IssuedSHA256   *string `json:"issued_sha256,omitempty"`
+	// SpecSHA256 is the approved deployment spec the run was started for.
+	SpecSHA256    *string    `json:"spec_sha256,omitempty"`
+	Error         string     `json:"error,omitempty"`
+	CreatedBy     string     `json:"created_by"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	Steps         []RunStep  `json:"steps,omitempty"`
 }
 
 // RunStep is one entry in a run's timeline.
@@ -432,12 +448,12 @@ type RunStep struct {
 	At     time.Time `json:"at"`
 }
 
-const runCols = `id, deployment_id, state, reason, attempt, current_task_id, previous_sha256, issued_sha256, error, created_by, created_at, updated_at, next_attempt_at, completed_at`
+const runCols = `id, deployment_id, state, reason, attempt, current_task_id, previous_sha256, issued_sha256, error, created_by, created_at, updated_at, next_attempt_at, completed_at, spec_sha256`
 
 func scanRun(r pgx.Row) (*Run, error) {
 	x := &Run{}
 	err := r.Scan(&x.ID, &x.DeploymentID, &x.State, &x.Reason, &x.Attempt, &x.CurrentTaskID, &x.PreviousSHA256, &x.IssuedSHA256, &x.Error,
-		&x.CreatedBy, &x.CreatedAt, &x.UpdatedAt, &x.NextAttemptAt, &x.CompletedAt)
+		&x.CreatedBy, &x.CreatedAt, &x.UpdatedAt, &x.NextAttemptAt, &x.CompletedAt, &x.SpecSHA256)
 	return x, notFound(err)
 }
 
@@ -445,10 +461,11 @@ func scanRun(r pgx.Row) (*Run, error) {
 var ErrRunActive = errors.New("deployment already has an active renewal run")
 
 // CreateRun starts a run (one active run per deployment, enforced by index).
-func (tx *Tx) CreateRun(ctx context.Context, deploymentID, reason, createdBy string, previous *string) (*Run, error) {
-	r := &Run{ID: ids.New("run"), DeploymentID: deploymentID, State: RunPlanned, Reason: reason, Attempt: 1, CreatedBy: createdBy, PreviousSHA256: previous}
-	err := tx.QueryRow(ctx, `INSERT INTO workflow_runs (id, org_id, deployment_id, state, reason, created_by, previous_sha256)
-		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING created_at, updated_at`, r.ID, tx.OrgID, deploymentID, r.State, reason, createdBy, previous).Scan(&r.CreatedAt, &r.UpdatedAt)
+func (tx *Tx) CreateRun(ctx context.Context, deploymentID, reason, createdBy string, previous *string, spec string) (*Run, error) {
+	r := &Run{ID: ids.New("run"), DeploymentID: deploymentID, State: RunPlanned, Reason: reason, Attempt: 1, CreatedBy: createdBy, PreviousSHA256: previous,
+		SpecSHA256: &spec}
+	err := tx.QueryRow(ctx, `INSERT INTO workflow_runs (id, org_id, deployment_id, state, reason, created_by, previous_sha256, spec_sha256)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING created_at, updated_at`, r.ID, tx.OrgID, deploymentID, r.State, reason, createdBy, previous, spec).Scan(&r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		if errors.Is(conflict(err), ErrConflict) {
 			return nil, ErrRunActive

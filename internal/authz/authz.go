@@ -29,15 +29,22 @@ const (
 	ManageIssuers     Permission = "issuers:manage"     // ACME issuer configuration
 	ManageDeployments Permission = "deployments:manage" // bind lineages to agent targets
 	RunRenewals       Permission = "renewals:run"       // start/cancel renewal runs
+	// approvals (separation of duties: nobody approves their own request)
+	RequestDeployments Permission = "deployments:request" // propose a deployment; it waits for approval
+	ApproveRequests    Permission = "approvals:decide"    // approve or deny requests made by someone else
 )
 
 var grants = map[string][]Permission{
 	"owner": {ViewInventory, ImportCerts, ManageEndpoints, ManageScopes, ManageOwnership, AckAlerts,
 		ManageChannels, ManageTokens, ViewAudit, ManageAutomation, ManageMembers, ManagePolicy,
-		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals},
-	"operator": {ViewInventory, ImportCerts, ManageEndpoints, ManageOwnership, AckAlerts, RunRenewals},
-	"viewer":   {ViewInventory},
-	"auditor":  {ViewInventory, ViewAudit},
+		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests},
+	"operator":            {ViewInventory, ImportCerts, ManageEndpoints, ManageOwnership, AckAlerts, RunRenewals},
+	"viewer":              {ViewInventory},
+	"auditor":             {ViewInventory, ViewAudit},
+	"requester":           {ViewInventory, RequestDeployments},
+	"approver":            {ViewInventory, ApproveRequests},
+	"deployment_operator": {ViewInventory, AckAlerts, ManageDeployments, RunRenewals},
+	"issuer_admin":        {ViewInventory, ManageIssuers},
 }
 
 // ErrForbidden is returned when the principal lacks a permission.
@@ -69,7 +76,9 @@ func (pr Principal) Require(p Permission) error {
 }
 
 // Roles lists known roles.
-func Roles() []string { return []string{"owner", "operator", "viewer", "auditor"} }
+func Roles() []string {
+	return []string{"owner", "operator", "viewer", "auditor", "requester", "approver", "deployment_operator", "issuer_admin"}
+}
 
 // Grants returns the permission set for a role (for docs and tests).
 func Grants(role string) []Permission { return append([]Permission(nil), grants[role]...) }

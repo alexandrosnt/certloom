@@ -268,6 +268,9 @@ func (s *Service) CreateToken(ctx context.Context, p authz.Principal, name, role
 	if !store.ValidRole(role) {
 		return nil, secret.Value{}, invalid("unknown role %q", role)
 	}
+	if role == store.RoleApprover {
+		return nil, secret.Value{}, invalid("approvals are decided by signed-in people, so an approver token would have no use")
+	}
 	// Prevent privilege escalation: only owners can mint owner tokens.
 	if role == store.RoleOwner && p.Role != store.RoleOwner {
 		return nil, secret.Value{}, authz.ErrForbidden

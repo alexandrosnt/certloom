@@ -95,11 +95,15 @@ func deploymentCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "deployment", Short: "Deployments: lineage -> agent target -> issuer"}
 	var lineage, agent, target, issuer, endpoint, window, emergency string
 	var sans []string
-	create := &cobra.Command{Use: "create", Short: "Create a deployment (owner)", RunE: run(func(c *client, _ []string) error {
+	create := &cobra.Command{Use: "create", Short: "Create a deployment, or request one if you may only request", RunE: run(func(c *client, _ []string) error {
 		return postAndPrint(c, "POST", "/api/v1/deployments", map[string]any{"lineage": lineage, "agent": agent, "target": target,
 			"issuer": issuer, "endpoint": endpoint, "sans": sans, "maintenance_window": window, "window_emergency": emergency}, func(raw json.RawMessage) {
-			var d struct{ ID string }
+			var d struct{ ID, Approval string }
 			_ = json.Unmarshal(raw, &d)
+			if d.Approval != "approved" {
+				fmt.Printf("Created deployment %s; it waits for approval by someone else (`certloom approval list`).\n", d.ID)
+				return
+			}
 			fmt.Printf("Created deployment %s. Renew now with `certloom deployment renew %s`.\n", d.ID, d.ID)
 		})
 	})}
@@ -145,16 +149,35 @@ func deploymentCmd() *cobra.Command {
 			fmt.Printf("Started run %s. Follow it with `certloom run show %s`.\n", r.ID, r.ID)
 		})
 	})}
-	cmd.AddCommand(create, renew, setWindow, listCmd("list", "List deployments", "/api/v1/deployments", "ID\tTARGET\tSANS\tRENEW AT\tWHY",
+	requestApproval := &cobra.Command{Use: "request-approval DEPLOYMENT", Short: "Request approval when the current approval does not cover the deployment",
+		Args: cobra.ExactArgs(1), RunE: run(func(c *client, args []string) error {
+			return postAndPrint(c, "POST", "/api/v1/deployments/"+url.PathEscape(args[0])+"/request-approval", nil, func(raw json.RawMessage) {
+				var a struct{ ID string }
+				_ = json.Unmarshal(raw, &a)
+				fmt.Printf("Opened approval request %s.\n", a.ID)
+			})
+		})}
+	var revokeReason string
+	revokeApproval := &cobra.Command{Use: "revoke-approval DEPLOYMENT", Short: "Revoke a deployment's approval; runs stop before changing the target",
+		Args: cobra.ExactArgs(1), RunE: run(func(c *client, args []string) error {
+			return postAndPrint(c, "POST", "/api/v1/deployments/"+url.PathEscape(args[0])+"/revoke-approval",
+				map[string]any{"reason": revokeReason}, func(json.RawMessage) {
+					fmt.Printf("Approval of deployment %s revoked.\n", args[0])
+				})
+		})}
+	revokeApproval.Flags().StringVar(&revokeReason, "reason", "", "why (required)")
+	_ = revokeApproval.MarkFlagRequired("reason")
+	cmd.AddCommand(create, renew, setWindow, requestApproval, revokeApproval, listCmd("list", "List deployments", "/api/v1/deployments", "ID\tTARGET\tSANS\tAPPROVAL\tRENEW AT\tWHY",
 		func(w io.Writer, raw json.RawMessage) {
 			var d struct {
 				ID, Target  string
 				SANs        []string   `json:"sans"`
 				RenewAt     *time.Time `json:"renew_at"`
 				RenewReason string     `json:"renew_reason"`
+				Approval    string     `json:"approval"`
 			}
 			_ = json.Unmarshal(raw, &d)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", d.ID, d.Target, strings.Join(d.SANs, ","), tsp(d.RenewAt), d.RenewReason)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", d.ID, d.Target, strings.Join(d.SANs, ","), d.Approval, tsp(d.RenewAt), d.RenewReason)
 		}))
 	return cmd
 }

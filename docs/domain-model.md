@@ -106,7 +106,9 @@ An alert resolves automatically when its finding has been resolved for one full 
 
 ### Approval (M3)
 
-`requested -> approved | denied | expired`
+`requested -> approved | denied | expired` (one open request per deployment). An approval covers
+a digest of the deployment spec; the deployment renews only while that digest still matches
+(ADR-0015).
 
 ### TrustBundle (Phase 7)
 

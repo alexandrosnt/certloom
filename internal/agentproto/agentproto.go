@@ -173,7 +173,12 @@ type IssuePayload struct {
 	Profile        string   `json:"profile,omitempty"`
 	ReplacesCertID string   `json:"replaces_cert_id,omitempty"`
 	SANs           []string `json:"sans"`
+	// KeyAlgorithm is the key to generate; empty means KeyECDSAP256.
+	KeyAlgorithm string `json:"key_algorithm,omitempty"`
 }
+
+// KeyECDSAP256 is the only key algorithm agents generate so far.
+const KeyECDSAP256 = "ecdsa-p256"
 
 // IssueOutput returns the public certificate chain (PEM, leaf first). On a
 // failed issuance it carries what the CA said about when to try again.

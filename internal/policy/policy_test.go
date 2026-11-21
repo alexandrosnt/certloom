@@ -55,3 +55,19 @@ func TestRejects(t *testing.T) {
 		}
 	}
 }
+
+func TestApprovalsSettings(t *testing.T) {
+	d, err := Parse([]byte("apiVersion: certloom/v1\nkind: MonitoringPolicy\nspec: {}\n"))
+	if err != nil || d.Spec.Approvals.Deployments != ApprovalOptional || time.Duration(d.Spec.Approvals.ExpireAfter) != 7*24*time.Hour {
+		t.Fatalf("defaults: %+v %v", d.Spec.Approvals, err)
+	}
+	for _, bad := range []string{"{deployments: sometimes}", "{expireAfter: 10m}", "{expireAfter: 31d}"} {
+		if _, err := Parse([]byte("apiVersion: certloom/v1\nkind: MonitoringPolicy\nspec:\n  approvals: " + bad + "\n")); err == nil {
+			t.Errorf("approvals %s accepted", bad)
+		}
+	}
+	d, err = Parse([]byte("apiVersion: certloom/v1\nkind: MonitoringPolicy\nspec:\n  approvals: {deployments: required, expireAfter: 2d, channels: [approvers]}\n"))
+	if err != nil || d.Spec.Approvals.Deployments != ApprovalRequired || len(d.Spec.Approvals.Channels) != 1 {
+		t.Fatalf("required: %+v %v", d.Spec.Approvals, err)
+	}
+}

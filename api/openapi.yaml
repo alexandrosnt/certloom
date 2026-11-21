@@ -40,6 +40,7 @@ tags:
   - name: audit
   - name: agents
   - name: renewal
+  - name: approvals
 
 paths:
   /healthz:
@@ -606,7 +607,7 @@ paths:
         "200": { $ref: "#/components/responses/List" }
     post:
       tags: [renewal]
-      summary: Create a deployment (owner). SANs must be in the target's allowed_sans.
+      summary: Create a deployment (deployments:manage), or request one (deployments:request). SANs must be in the target's allowed_sans. Without deployments:manage, or when policy approvals.deployments is required, it stays pending until someone else approves it.
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
         required: true
@@ -658,6 +659,91 @@ paths:
         "400": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/deployments/{id}/request-approval:
+    post:
+      tags: [approvals]
+      summary: Request approval for a deployment whose approval does not cover its current spec (denied, revoked, expired, changed, or created before approvals were required)
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/deployments/{id}/revoke-approval:
+    post:
+      tags: [approvals]
+      summary: Revoke a deployment's approval (approvals:decide); runs stop before changing the target
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/approvals:
+    get:
+      tags: [approvals]
+      summary: Approval requests, newest first
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [requested, approved, denied, expired, revoked] } }
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+        "400": { $ref: "#/components/responses/Problem" }
+  /api/v1/approvals/{id}:
+    get:
+      tags: [approvals]
+      summary: One approval request, with the exact spec it covers
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/approvals/{id}/approve:
+    post:
+      tags: [approvals]
+      summary: Approve a request (signed-in people only; never the requester or the creator of the requesting token)
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/approvals/{id}/deny:
+    post:
+      tags: [approvals]
+      summary: Deny a request; a reason is required
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /api/v1/runs:
     get:
       tags: [renewal]

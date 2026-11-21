@@ -91,8 +91,12 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 	if err := checkWindow(in.Window, in.Emergency); err != nil {
 		return nil, err
 	}
+	perm := authz.ManageDeployments
+	if !p.Can(perm) {
+		perm = authz.RequestDeployments
+	}
 	var d *store.Deployment
-	err := s.tx(ctx, p, authz.ManageDeployments, func(tx *store.Tx) error {
+	err := s.tx(ctx, p, perm, func(tx *store.Tx) error {
 		l, err := tx.LineageByRef(ctx, in.Lineage)
 		if err != nil {
 			return invalid("lineage %q not found", in.Lineage)
@@ -127,16 +131,41 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 				return invalid("endpoint %q not found", in.Endpoint)
 			}
 			d.EndpointID = &e.ID
-			if err := tx.SetEndpointLineage(ctx, e.ID, &l.ID, nil); err != nil {
+		}
+		pv, err := tx.ActivePolicy(ctx)
+		if err != nil {
+			return err
+		}
+		pending := approvalNeeded(p, pv.Document)
+		// A pending deployment changes nothing else yet; the endpoint is bound
+		// to the lineage when the deployment is approved.
+		if d.EndpointID != nil && !pending {
+			if err := tx.SetEndpointLineage(ctx, *d.EndpointID, &l.ID, nil); err != nil {
 				return err
 			}
+		}
+		d.KeyAlgorithm = agentproto.KeyECDSAP256
+		spec := store.BuildDeploymentSpec(d, iss, a)
+		if pending {
+			d.Approval = "pending"
+		} else {
+			digest := spec.SHA256()
+			d.Approval, d.ApprovedSpecSHA256 = "approved", &digest
 		}
 		if err := tx.CreateDeployment(ctx, d, p.Actor); err != nil {
 			return err
 		}
+		var approvalID string
+		if pending {
+			apr, err := s.requestApproval(ctx, tx, d, spec, p.Actor, pv.Document)
+			if err != nil {
+				return err
+			}
+			approvalID = apr.ID
+		}
 		return s.audit(ctx, tx, p, "deployments.create", "deployment", d.ID, map[string]any{"lineage": l.ID, "agent": a.ID,
 			"target": in.Target, "issuer": iss.ID, "sans": in.SANs, "endpoint": in.Endpoint, "maintenance_window": d.MaintenanceWindow,
-			"window_emergency": d.WindowEmergency})
+			"window_emergency": d.WindowEmergency, "approval": d.Approval, "approval_request": approvalID})
 	})
 	return d, err
 }
@@ -192,11 +221,22 @@ func (s *Service) startRun(ctx context.Context, tx *store.Tx, deploymentID, reas
 	if !d.Enabled {
 		return nil, invalid("deployment is disabled")
 	}
+	pv, err := tx.ActivePolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	problem, digest, err := s.approvalProblem(ctx, tx, d, approvalsRequired(pv.Document), nil)
+	if err != nil {
+		return nil, err
+	}
+	if problem != "" {
+		return nil, invalid("%s", problem)
+	}
 	l, err := tx.LineageByRef(ctx, d.LineageID)
 	if err != nil {
 		return nil, err
 	}
-	r, err := tx.CreateRun(ctx, d.ID, reason, actor, l.CurrentSHA256)
+	r, err := tx.CreateRun(ctx, d.ID, reason, actor, l.CurrentSHA256, digest)
 	if err != nil {
 		if errors.Is(err, store.ErrRunActive) {
 			return nil, fmt.Errorf("%w: %w", store.ErrConflict, err)
@@ -255,6 +295,9 @@ func (s *Service) ScheduleRenewals(ctx context.Context) (int, error) {
 		err := s.DB.WithOrg(ctx, org, func(tx *store.Tx) error {
 			// Safety net: expire overdue tasks (an offline agent never polls to
 			// expire them) and re-advance runs whose current task has finished.
+			if err := s.expireApprovals(ctx, tx); err != nil {
+				return err
+			}
 			if _, err := tx.Exec(ctx, `UPDATE agent_tasks SET state = 'expired', error = 'not completed before not_after'
 				WHERE state IN ('pending','delivered') AND not_after <= now()`); err != nil {
 				return err
@@ -278,17 +321,43 @@ func (s *Service) ScheduleRenewals(ctx context.Context) (int, error) {
 			if err != nil {
 				return err
 			}
+			pv, err := tx.ActivePolicy(ctx)
+			if err != nil {
+				return err
+			}
+			required := approvalsRequired(pv.Document)
 			now := s.now()
 			for _, d := range ds {
 				if !d.Enabled {
 					continue
 				}
-				if d.ARINextAt == nil || !d.ARINextAt.After(now) {
+				ariDue := d.ARINextAt == nil || !d.ARINextAt.After(now)
+				renewDue := d.RenewAt != nil && !d.RenewAt.After(now)
+				if !ariDue && !renewDue {
+					continue
+				}
+				// Resolved only when something is due: it reads the issuer and agent.
+				problem, _, err := s.approvalProblem(ctx, tx, d, required, nil)
+				if err != nil {
+					return err
+				}
+				if problem != "" {
+					if renewDue {
+						// Once a day, so a renewal that waits for approval is not missed.
+						key := d.ID + ":blocked:" + now.UTC().Format(time.DateOnly)
+						if err := s.notifyApproval(ctx, tx, pv.Document, d, "approval.blocking_renewal", key,
+							"renewal is due but blocked: "+problem); err != nil {
+							return err
+						}
+					}
+					continue
+				}
+				if ariDue {
 					if _, err := jobs.Enqueue(ctx, tx, org, JobKindARICheck, d.ID, map[string]string{"deployment_id": d.ID}, time.Time{}); err != nil {
 						return err
 					}
 				}
-				if d.RenewAt == nil || d.RenewAt.After(now) {
+				if !renewDue {
 					continue
 				}
 				if _, err := tx.ActiveRunFor(ctx, d.ID); err == nil {
@@ -504,6 +573,23 @@ func (s *Service) advance(ctx context.Context, tx *store.Tx, runID string, ext e
 	if agent.State != "active" {
 		return s.finish(ctx, tx, r, d, store.RunFailed, "agent was revoked; target state unknown if a deploy was in progress")
 	}
+	// Approval is checked again before every step that orders a certificate
+	// or changes the target, not only when the run starts. A run issuing right
+	// now finishes issuing, but its certificate is not deployed.
+	switch r.State {
+	case store.RunPlanned, store.RunRetryScheduled, store.RunIssued, store.RunWaitingWindow, store.RunBlocked:
+		pv, err := tx.ActivePolicy(ctx)
+		if err != nil {
+			return err
+		}
+		problem, _, err := s.approvalProblem(ctx, tx, d, approvalsRequired(pv.Document), r.SpecSHA256)
+		if err != nil {
+			return err
+		}
+		if problem != "" {
+			return s.finish(ctx, tx, r, d, store.RunCancelled, problem+"; the target was not changed")
+		}
+	}
 	task := func() (*store.AgentTask, error) {
 		if r.CurrentTaskID == nil {
 			return nil, errors.New("run has no current task")
@@ -704,7 +790,8 @@ func (s *Service) sendIssue(ctx context.Context, tx *store.Tx, r *store.Run, d *
 	if err != nil {
 		return err
 	}
-	p := agentproto.IssuePayload{RunID: r.ID, DirectoryURL: iss.DirectoryURL, Email: iss.Email, AgreeTOS: iss.AgreeTOS, Profile: iss.Profile, SANs: d.SANs}
+	p := agentproto.IssuePayload{RunID: r.ID, DirectoryURL: iss.DirectoryURL, Email: iss.Email, AgreeTOS: iss.AgreeTOS, Profile: iss.Profile, SANs: d.SANs,
+		KeyAlgorithm: d.KeyAlgorithm}
 	if r.PreviousSHA256 != nil {
 		if c, err := tx.GetCertificate(ctx, *r.PreviousSHA256); err == nil {
 			if id, err := ari.CertID(c.X509); err == nil {

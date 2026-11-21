@@ -103,10 +103,23 @@ type Spec struct {
 		// Channels: channel names to escalate to; empty = all enabled channels.
 		Channels []string `json:"channels,omitempty"`
 	} `json:"escalation,omitempty"`
+	Approvals struct {
+		// Deployments is "optional" (default) or "required". When required,
+		// a new or changed deployment spec renews only after someone other
+		// than the requester approves it.
+		Deployments string `json:"deployments,omitempty"`
+		// ExpireAfter: an undecided request expires after this long.
+		ExpireAfter Duration `json:"expireAfter,omitempty"`
+		// Channels: channel names for approval requests, decisions and
+		// renewals blocked on approval; empty = all enabled channels.
+		Channels []string `json:"channels,omitempty"`
+	} `json:"approvals,omitempty"`
 }
 
 // Defaults.
 const (
+	ApprovalOptional            = "optional"
+	ApprovalRequired            = "required"
 	DefaultObservationRetention = 30 * 24 * time.Hour
 )
 
@@ -120,6 +133,8 @@ func Default() *Document {
 	d.Spec.Keys.MinECDSABits = 256
 	d.Spec.Probing.FailuresBeforeAlert = 3
 	d.Spec.Retention.Observations = Duration(DefaultObservationRetention)
+	d.Spec.Approvals.Deployments = ApprovalOptional
+	d.Spec.Approvals.ExpireAfter = Duration(7 * 24 * time.Hour)
 	return d
 }
 
@@ -167,6 +182,12 @@ func (d *Document) fill() {
 	if s.Retention.Observations == 0 {
 		s.Retention.Observations = def.Spec.Retention.Observations
 	}
+	if s.Approvals.Deployments == "" {
+		s.Approvals.Deployments = def.Spec.Approvals.Deployments
+	}
+	if s.Approvals.ExpireAfter == 0 {
+		s.Approvals.ExpireAfter = def.Spec.Approvals.ExpireAfter
+	}
 }
 
 // ValidationError lists every problem found.
@@ -212,6 +233,12 @@ func (d *Document) Validate() error {
 	}
 	if a := time.Duration(s.Escalation.After); a != 0 && a < 15*time.Minute {
 		add("escalation.after must be at least 15m (or omitted to disable escalation)")
+	}
+	if a := s.Approvals.Deployments; a != ApprovalOptional && a != ApprovalRequired {
+		add("approvals.deployments must be %q or %q", ApprovalOptional, ApprovalRequired)
+	}
+	if e := time.Duration(s.Approvals.ExpireAfter); e < time.Hour || e > 30*24*time.Hour {
+		add("approvals.expireAfter must be between 1h and 30d")
 	}
 	if len(p) > 0 {
 		return &ValidationError{Problems: p}

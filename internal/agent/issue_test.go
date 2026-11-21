@@ -1,8 +1,13 @@
 package agent
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,5 +49,21 @@ func TestReplacesRejected(t *testing.T) {
 		if got := replacesRejected(tc.err); got != tc.want {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// The agent generates only the key algorithm it knows; anything else in a
+// task is refused before a key is created or the CA is contacted.
+func TestIssueRefusesUnknownKeyAlgorithm(t *testing.T) {
+	a, _, _ := testAgent(t)
+	a.cfg.Targets[0].AllowedSANs = []string{"www.example.test"}
+	tk := task("i1", agentproto.TaskIssue, 1)
+	tk.Payload = json.RawMessage(`{"run_id":"run_1","directory_url":"https://acme.invalid/dir","sans":["www.example.test"],"key_algorithm":"rsa-1024"}`)
+	_, err := a.handleIssue(context.Background(), &tk)
+	if err == nil || !strings.Contains(err.Error(), "unsupported key algorithm") {
+		t.Fatalf("want key algorithm refusal, got %v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(a.cfg.StateDir, "certs")); len(entries) != 0 {
+		t.Fatalf("a key was generated: %v", entries)
 	}
 }

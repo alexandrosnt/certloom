@@ -16,16 +16,20 @@ import (
 
 // Roles.
 const (
-	RoleOwner    = "owner"
-	RoleOperator = "operator"
-	RoleViewer   = "viewer"
-	RoleAuditor  = "auditor"
+	RoleOwner              = "owner"
+	RoleOperator           = "operator"
+	RoleViewer             = "viewer"
+	RoleAuditor            = "auditor"
+	RoleRequester          = "requester"
+	RoleApprover           = "approver"
+	RoleDeploymentOperator = "deployment_operator"
+	RoleIssuerAdmin        = "issuer_admin"
 )
 
 // ValidRole reports whether r is a known role.
 func ValidRole(r string) bool {
 	switch r {
-	case RoleOwner, RoleOperator, RoleViewer, RoleAuditor:
+	case RoleOwner, RoleOperator, RoleViewer, RoleAuditor, RoleRequester, RoleApprover, RoleDeploymentOperator, RoleIssuerAdmin:
 		return true
 	}
 	return false
@@ -124,4 +128,11 @@ func (tx *Tx) RevokeToken(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+// TokenCreatedBy returns who created a token, revoked or not.
+func (tx *Tx) TokenCreatedBy(ctx context.Context, id string) (string, error) {
+	var by string
+	err := tx.QueryRow(ctx, `SELECT created_by FROM api_tokens WHERE id = $1`, id).Scan(&by)
+	return by, notFound(err)
 }

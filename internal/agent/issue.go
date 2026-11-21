@@ -77,6 +77,10 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 	if p.RunID == "" || len(p.SANs) == 0 {
 		return nil, errors.New("issue task needs run_id and sans")
 	}
+	// Empty means the default, for control planes older than this field.
+	if p.KeyAlgorithm != "" && p.KeyAlgorithm != agentproto.KeyECDSAP256 {
+		return nil, fmt.Errorf("unsupported key algorithm %q", p.KeyAlgorithm)
+	}
 	for _, san := range p.SANs {
 		if !sanAllowed(san, tgt.AllowedSANs) { // the control plane is not trusted with this decision
 			return nil, fmt.Errorf("SAN %q is not in this host's allowed_sans for target %s", san, tgt.Name)

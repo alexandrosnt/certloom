@@ -24,3 +24,4 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0012](0012-audit.md) | Audit trail integrity | Accepted |
 | [0013](0013-scheduling.md) | Scheduling and renewal timing | Accepted |
 | [0014](0014-license-governance.md) | License, governance, release integrity | Accepted |
+| [0015](0015-approvals.md) | Approvals and separation of duties | Accepted |

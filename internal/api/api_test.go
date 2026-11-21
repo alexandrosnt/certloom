@@ -292,3 +292,34 @@ func runSweep(h *harness) error {
 	}
 	return h.svc.RunCertSweep(bg, js[0])
 }
+
+// Approval routes map service errors to the right status codes; the
+// approval logic itself is tested in test/workflow.
+func TestApprovalRoutes(t *testing.T) {
+	h := newHarness(t, nil)
+	if r, body := h.req("GET", "/api/v1/approvals", h.owner, nil, nil); r.StatusCode != 200 || !strings.Contains(body, `"items":[]`) {
+		t.Fatalf("list: %d %s", r.StatusCode, body)
+	}
+	if r, _ := h.req("GET", "/api/v1/approvals?state=bogus", h.owner, nil, nil); r.StatusCode != 400 {
+		t.Fatalf("bad state: want 400, got %d", r.StatusCode)
+	}
+	if r, _ := h.req("GET", "/api/v1/approvals/apr_missing", h.owner, nil, nil); r.StatusCode != 404 {
+		t.Fatalf("missing: want 404, got %d", r.StatusCode)
+	}
+	// API tokens never decide, whatever their role.
+	if r, _ := h.req("POST", "/api/v1/approvals/apr_missing/approve", h.owner, nil, nil); r.StatusCode != 403 {
+		t.Fatalf("token approve: want 403, got %d", r.StatusCode)
+	}
+	if r, _ := h.req("POST", "/api/v1/tokens", h.owner, map[string]string{"name": "bot", "role": "approver"}, nil); r.StatusCode != 400 {
+		t.Fatalf("approver token: want 400, got %d", r.StatusCode)
+	}
+	if r, _ := h.req("POST", "/api/v1/tokens", h.owner, map[string]string{"name": "ci", "role": "requester"}, nil); r.StatusCode != 201 {
+		t.Fatalf("requester token: want 201, got %d", r.StatusCode)
+	}
+	if r, _ := h.req("POST", "/api/v1/deployments/dep_missing/revoke-approval", h.owner, map[string]string{"reason": ""}, nil); r.StatusCode != 400 {
+		t.Fatalf("revoke without reason: want 400, got %d", r.StatusCode)
+	}
+	if r, _ := h.req("POST", "/api/v1/deployments/dep_missing/revoke-approval", h.owner, map[string]string{"reason": "incident"}, nil); r.StatusCode != 404 {
+		t.Fatalf("revoke missing: want 404, got %d", r.StatusCode)
+	}
+}
