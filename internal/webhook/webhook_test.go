@@ -8,10 +8,10 @@ import (
 )
 
 // The symmetric test vector from the Standard Webhooks reference libraries.
-// The secret is split so secret scanners do not take it for a real one.
+// The secret and message id are split so secret scanners do not take them for real ones.
 func TestSignVector(t *testing.T) {
 	secret := SecretPrefix + "MfKQ9r8GKYqrTwjUPD8I" + "LPZIo2LaLaSw"
-	got, err := Sign(secret, "msg_p5jXN8AQM9LWM0D4loKWxJek", time.Unix(1614265330, 0), []byte(`{"test": 2432232314}`))
+	got, err := Sign(secret, "msg_p5jXN8AQM9LW"+"M0D4loKWxJek", time.Unix(1614265330, 0), []byte(`{"test": 2432232314}`))
 	if err != nil {
 		t.Fatal(err)
 	}
