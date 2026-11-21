@@ -1,0 +1,20 @@
+{{define "content"}}
+<h1>Alerts</h1>
+{{if .D.Alerts}}
+<table>
+<thead><tr><th>State</th><th>Severity</th><th>Check</th><th>Subject</th><th>Message</th><th>Since</th><th></th></tr></thead>
+<tbody>
+{{range .D.Alerts}}
+<tr>
+  <td>{{.State}}</td><td><span class="sev {{.Severity}}">{{.Severity}}</span></td><td>{{.Finding.Check}}</td>
+  <td>{{if eq .Finding.SubjectType "endpoint"}}<a href="/endpoints/{{.Finding.SubjectID}}">endpoint</a>{{else}}<a href="/certificates/{{.Finding.SubjectID}}">certificate</a>{{end}}</td>
+  <td>{{.Finding.Message}}</td><td>{{ts .CreatedAt}}</td>
+  <td>{{if and $.D.CanAck (eq .State "open")}}
+    <form method="post" action="/alerts/{{.ID}}/ack"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button type="submit">Acknowledge</button></form>
+  {{else if .AckedBy}}<span class="muted">acked by {{deref .AckedBy}}</span>{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No open or acknowledged alerts.</p>{{end}}
+{{end}}

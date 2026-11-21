@@ -1,0 +1,36 @@
+{{define "content"}}
+<h1>{{if .D.CommonName}}{{.D.CommonName}}{{else}}Certificate{{end}}</h1>
+<dl class="kv">
+  <dt>SHA-256</dt><dd><code>{{.D.SHA256}}</code></dd>
+  <dt>Subject</dt><dd>{{.D.Subject}}</dd>
+  <dt>Issuer</dt><dd>{{.D.Issuer}}</dd>
+  <dt>Serial</dt><dd><code>{{.D.Serial}}</code></dd>
+  <dt>Valid</dt><dd>{{ts .D.NotBefore}} -> {{ts .D.NotAfter}} <span class="sev {{urgency .D.NotAfter}}">{{left .D.NotAfter}}</span></dd>
+  <dt>DNS names</dt><dd>{{join .D.DNSNames ", "}}</dd>
+  {{if .D.IPAddresses}}<dt>IP addresses</dt><dd>{{join .D.IPAddresses ", "}}</dd>{{end}}
+  <dt>Key</dt><dd>{{.D.KeyAlgorithm}} {{.D.KeyBits}} {{.D.Curve}}</dd>
+  <dt>Signature</dt><dd>{{.D.SignatureAlgorithm}}</dd>
+  <dt>Usage</dt><dd>{{join .D.KeyUsage ", "}}{{if .D.ExtKeyUsage}} - {{join .D.ExtKeyUsage ", "}}{{end}}</dd>
+  <dt>CA</dt><dd>{{if .D.IsCA}}yes{{else}}no{{end}}{{if .D.SelfSigned}} (self-signed){{end}}</dd>
+  <dt>Source</dt><dd>{{.D.Source}}, first seen {{ts .D.FirstSeen}}</dd>
+  <dt>Private key</dt><dd class="muted">Never stored by certloom.</dd>
+</dl>
+{{if .D.Warnings}}<h2>Parser warnings</h2><ul>{{range .D.Warnings}}<li>{{.}}</li>{{end}}</ul>{{end}}
+<h2>Currently served by</h2>
+{{if .D.ServedBy}}
+<ul>{{range .D.ServedBy}}<li><a href="/endpoints/{{.ID}}">{{.Host}}:{{.Port}}{{if .SNI}} (SNI {{.SNI}}){{end}}</a>, last observed {{ts .LastObservedAt}}</li>{{end}}</ul>
+{{else}}
+<p class="muted">No monitored endpoint is currently serving this certificate.</p>
+{{end}}
+<h2>Findings</h2>
+{{template "findinglist" .D.Findings}}
+{{end}}
+
+{{define "findinglist"}}
+{{if .}}
+<table>
+<thead><tr><th>Severity</th><th>Check</th><th>Message</th><th>What to do</th><th>Since</th></tr></thead>
+<tbody>{{range .}}<tr><td><span class="sev {{.Severity}}">{{.Severity}}</span></td><td>{{.Check}}</td><td>{{.Message}}</td><td>{{.Remediation}}</td><td>{{ts .FirstSeen}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="muted">No open findings.</p>{{end}}
+{{end}}

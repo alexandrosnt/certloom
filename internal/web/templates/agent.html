@@ -1,0 +1,44 @@
+{{define "content"}}
+{{$a := .D.A}}
+<h1>{{$a.Name}}</h1>
+<dl class="kv">
+  <dt>ID</dt><dd><code>{{$a.ID}}</code></dd>
+  <dt>Health</dt><dd><span class="sev {{healthClass .D.Health}}">{{.D.Health}}</span></dd>
+  <dt>State</dt><dd>{{$a.State}}{{if $a.RevokedAt}}, revoked {{ts $a.RevokedAt}}{{end}}</dd>
+  <dt>Hostname</dt><dd>{{$a.Hostname}}</dd>
+  <dt>Version</dt><dd>{{if $a.Version}}{{$a.Version}}{{else}}-{{end}}</dd>
+  <dt>Last heartbeat</dt><dd>{{ts $a.LastHeartbeat}}</dd>
+  <dt>Identity certificate</dt><dd>serial <code>{{$a.CertSerial}}</code>, valid until {{ts $a.CertNotAfter}}</dd>
+  <dt>Allowed tasks</dt><dd>{{if $a.Capabilities.Tasks}}{{join $a.Capabilities.Tasks ", "}}{{else}}-{{end}}</dd>
+  <dt>Enrolled</dt><dd>{{ts $a.CreatedAt}}</dd>
+</dl>
+<h2>Targets reported</h2>
+<p class="muted">Targets and SAN allowlists come from the agent's local configuration, as last reported in a heartbeat. The agent enforces them again on every task.</p>
+{{if $a.Capabilities.Targets}}
+<table>
+<thead><tr><th>Name</th><th>Type</th><th>ACME HTTP-01</th><th>Allowed SANs</th></tr></thead>
+<tbody>
+{{range $a.Capabilities.Targets}}
+<tr><td>{{.Name}}</td><td>{{.Type}}</td><td>{{if .ACME}}yes{{else}}no{{end}}</td><td class="wrap">{{join .AllowedSANs ", "}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No targets reported yet.</p>{{end}}
+<h2>Deployments</h2>
+{{if .D.Deployments}}
+<table>
+<thead><tr><th>Lineage</th><th>Target</th><th>Issuer</th><th>SANs</th><th>Enabled</th><th>Next renewal</th><th>Last run</th></tr></thead>
+<tbody>
+{{range .D.Deployments}}
+<tr>
+  <td>{{.Lineage}}</td><td>{{.D.Target}}</td><td>{{.Issuer}}</td><td class="wrap">{{join .D.SANs ", "}}</td>
+  <td>{{if .D.Enabled}}yes{{else}}<span class="sev warning">disabled</span>{{end}}</td>
+  <td>{{ts .D.RenewAt}}{{if .D.RenewReason}} <span class="muted">{{.D.RenewReason}}</span>{{end}}</td>
+  <td>{{if .LastRun}}<a href="/runs/{{.LastRun.ID}}"><span class="sev {{runClass .LastRun.State}}">{{.LastRun.State}}</span></a>{{else}}-{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+<p><a href="/deployments">All deployments</a></p>
+{{else}}<p class="muted">No deployments use this agent.</p>{{end}}
+{{end}}

@@ -1,0 +1,23 @@
+{{define "content"}}
+<h1>Agents</h1>
+<p class="muted">Agents run on target hosts and perform issuance and deployment for their locally configured targets. An agent is stale after 90 seconds without a heartbeat and offline after 24 hours.</p>
+{{if .D}}
+<table>
+<thead><tr><th>Name</th><th>Health</th><th>State</th><th>Hostname</th><th>Version</th><th>Last heartbeat</th><th>Targets reported</th><th>Deployments</th></tr></thead>
+<tbody>
+{{range .D}}
+<tr>
+  <td><a href="/agents/{{.A.ID}}">{{.A.Name}}</a></td>
+  <td><span class="sev {{healthClass .Health}}">{{.Health}}</span></td>
+  <td>{{.A.State}}</td>
+  <td>{{.A.Hostname}}</td>
+  <td>{{if .A.Version}}{{.A.Version}}{{else}}-{{end}}</td>
+  <td>{{ts .A.LastHeartbeat}}</td>
+  <td>{{if .A.Capabilities.Targets}}{{range $i, $t := .A.Capabilities.Targets}}{{if $i}}, {{end}}{{$t.Name}}{{end}}{{else}}<span class="muted">none</span>{{end}}</td>
+  <td>{{.Deployments}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No agents enrolled. Create an enrollment token with <code>certloom agent token</code> and run <code>certloom-agent enroll</code> on the host.</p>{{end}}
+{{end}}

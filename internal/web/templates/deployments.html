@@ -1,0 +1,26 @@
+{{define "content"}}
+<h1>Deployments</h1>
+<p class="muted">A deployment binds a lineage to an agent target and an ACME issuer. Renewals are scheduled automatically; ARI (RFC 9773) can move the renewal time earlier.</p>
+{{if .D.Deployments}}
+<table>
+<thead><tr><th>Lineage</th><th>Agent / target</th><th>Issuer</th><th>SANs</th><th>Enabled</th><th>Next renewal</th><th>ARI next check</th><th>Last run</th><th></th></tr></thead>
+<tbody>
+{{range .D.Deployments}}
+<tr>
+  <td>{{.Lineage}}</td>
+  <td><a href="/agents/{{.D.AgentID}}">{{.Agent}}</a> / {{.D.Target}}</td>
+  <td>{{.Issuer}}</td>
+  <td class="wrap">{{join .D.SANs ", "}}</td>
+  <td>{{if .D.Enabled}}yes{{else}}<span class="sev warning">disabled</span>{{end}}</td>
+  <td>{{ts .D.RenewAt}}{{if .D.RenewReason}}<br><span class="muted">{{.D.RenewReason}}</span>{{end}}</td>
+  <td>{{ts .D.ARINextAt}}</td>
+  <td>{{if .LastRun}}<a href="/runs/{{.LastRun.ID}}"><span class="sev {{runClass .LastRun.State}}">{{.LastRun.State}}</span></a><br><span class="muted">{{ts .LastRun.UpdatedAt}}</span>{{else}}-{{end}}</td>
+  <td>{{if and $.D.CanRenew .D.Enabled}}
+    <form method="post" action="/deployments/{{.D.ID}}/renew"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button type="submit">Renew now</button></form>
+  {{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No deployments yet. Create one with <code>certloom deployment create</code>.</p>{{end}}
+{{end}}

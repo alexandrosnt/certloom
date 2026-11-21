@@ -1,0 +1,20 @@
+{{define "content"}}
+<section class="login">
+  <h1>Sign in to certloom</h1>
+  {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+  {{if .D.OIDC}}
+  <form method="get" action="/auth/oidc/login">
+    <label for="org">Organization <span class="muted">(only if you belong to several)</span></label>
+    <input id="org" name="org" value="{{.D.Org}}" autocomplete="organization">
+    <button type="submit">Sign in with single sign-on</button>
+  </form>
+  <p class="muted">- or use an API token -</p>
+  {{end}}
+  <form method="post" action="/login">
+    <label for="token">API token</label>
+    <input id="token" name="token" type="password" autocomplete="off" required>
+    <button type="submit">Sign in with token</button>
+  </form>
+  {{if not .D.OIDC}}<p class="muted">Create a token with <code>certloomd bootstrap</code> or <code>certloom token create</code>. Single sign-on is available when the server sets <code>CERTLOOM_OIDC_ISSUER</code>.</p>{{end}}
+</section>
+{{end}}

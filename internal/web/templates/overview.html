@@ -1,0 +1,33 @@
+{{define "content"}}
+<h1>Overview</h1>
+<div class="metrics">
+{{range .D.Metrics}}
+  <a class="metric {{if and (gt .Value 0) (or (eq .Key "expired") (eq .Key "expiring_7d") (eq .Key "endpoint_mismatch") (eq .Key "endpoints_critical"))}}bad{{end}}" href="{{.Link}}" title="{{.Definition}}">
+    <span class="value">{{.Value}}</span>
+    <span class="denom">of {{.Denominator}}</span>
+    <span class="label">{{.Label}}</span>
+    <span class="def">{{.Definition}}</span>
+  </a>
+{{end}}
+</div>
+<h2>Open alerts</h2>
+{{if .D.Alerts}}
+<table>
+<thead><tr><th>Severity</th><th>Check</th><th>Subject</th><th>Message</th><th>Since</th></tr></thead>
+<tbody>
+{{range .D.Alerts}}
+<tr>
+  <td><span class="sev {{.Severity}}">{{.Severity}}</span></td>
+  <td>{{.Finding.Check}}</td>
+  <td>{{if eq .Finding.SubjectType "endpoint"}}<a href="/endpoints/{{.Finding.SubjectID}}">endpoint</a>{{else}}<a href="/certificates/{{.Finding.SubjectID}}">certificate {{short .Finding.SubjectID}}</a>{{end}}</td>
+  <td>{{.Finding.Message}}</td>
+  <td>{{ts .CreatedAt}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+<p><a href="/alerts">All alerts -></a></p>
+{{else}}
+<p class="muted">No open alerts.</p>
+{{end}}
+{{end}}

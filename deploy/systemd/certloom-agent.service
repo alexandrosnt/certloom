@@ -1,0 +1,85 @@
+# certloom-agent: certificate lifecycle agent.
+#
+# Enroll before enabling this unit:
+#   certloom-agent enroll --config /etc/certloom-agent/config.yaml --ca-hash sha256:...
+#   systemctl enable --now certloom-agent
+#
+# The agent runs as root because it runs the configured test_command and
+# reload_command (for example `nginx -t` and `systemctl reload nginx`) and
+# writes the live symlinks the web server reads. The sandbox below keeps the
+# rest of the system read-only:
+#   - /usr, /boot and /etc are read-only, except /etc/certloom (live symlinks);
+#   - /var stays writable (state in /var/lib/certloom-agent, ACME webroots such as
+#     /var/www/acme, and the log/temp files `nginx -t` touches);
+#   - /home, /root and /run/user are not visible.
+#
+# If a target needs another path (a live_link outside /etc/certloom, a webroot under
+# /home, a server that keeps its config test output under /etc), add a drop-in
+# instead of editing this file:
+#   systemctl edit certloom-agent
+#     [Service]
+#     ReadWritePaths=/etc/haproxy/certs
+#     ProtectHome=read-only
+#   systemctl restart certloom-agent
+# `systemd-analyze security certloom-agent` shows the effective settings.
+
+[Unit]
+Description=certloom certificate lifecycle agent
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=10min
+StartLimitBurst=10
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/certloom-agent run --config /etc/certloom-agent/config.yaml
+Restart=on-failure
+RestartSec=10s
+# Commands started by the agent (a reload in progress) are stopped with it.
+KillMode=control-group
+TimeoutStopSec=90s
+
+StateDirectory=certloom-agent
+StateDirectoryMode=0700
+# Challenge files in the webroot must stay readable by the web server's
+# unprivileged workers; private keys are protected by the 0700 state directory
+# and their own 0600 mode.
+UMask=0022
+
+# Filesystem.
+ProtectSystem=full
+ReadWritePaths=/etc/certloom
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+
+# Privileges. Root keeps only what file handling and the usual web server
+# config tests need (nginx -t creates and chowns its temp directories).
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_KILL CAP_SETGID CAP_SETUID CAP_NET_BIND_SERVICE
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+
+# Kernel.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+
+# Network: outbound TLS to the control plane and the ACME CA, local handshake
+# for verification, and the unix socket systemctl uses to reach systemd.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# MemoryDenyWriteExecute is not set: it is inherited by test_command and
+# reload_command, and would break servers whose config test uses a JIT (for
+# example nginx with pcre_jit on).
+
+[Install]
+WantedBy=multi-user.target

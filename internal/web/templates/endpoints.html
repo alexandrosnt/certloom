@@ -1,0 +1,39 @@
+{{define "content"}}
+<h1>Endpoints</h1>
+{{if .D.Endpoints}}
+<table>
+<thead><tr><th>Endpoint</th><th>Serving</th><th>Last observed</th><th>Status</th><th>Next probe</th></tr></thead>
+<tbody>
+{{range .D.Endpoints}}
+<tr>
+  <td><a href="/endpoints/{{.ID}}">{{.Host}}:{{.Port}}</a>{{if .SNI}} <span class="muted">SNI {{.SNI}}</span>{{end}}</td>
+  <td>{{if .LastLeafSHA256}}<a href="/certificates/{{deref .LastLeafSHA256}}"><code>{{short .LastLeafSHA256}}</code></a>{{else}}-{{end}}</td>
+  <td>{{ts .LastObservedAt}}</td>
+  <td>{{if gt .ConsecutiveFailures 0}}<span class="sev warning">failing x{{.ConsecutiveFailures}}</span>{{else if .LastObservedAt}}<span class="sev ok">ok</span>{{else}}<span class="muted">pending</span>{{end}}</td>
+  <td>{{ts .NextProbeAt}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p class="muted">No endpoints yet.</p>
+{{end}}
+
+{{if .D.CanManage}}
+<h2>Add endpoint</h2>
+{{if .D.Scopes}}
+<form method="post" action="/endpoints" class="stack">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label>Host <input name="host" required placeholder="www.example.com"></label>
+  <label>Port <input name="port" type="number" min="1" max="65535" value="443"></label>
+  <label>SNI (optional) <input name="sni" placeholder="defaults to host"></label>
+  <label>Scope
+    <select name="scope" required>{{range .D.Scopes}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+  </label>
+  <button type="submit">Add endpoint</button>
+</form>
+{{else}}
+<p class="muted">Create a probe scope first (<code>certloom scope create</code>). Scopes limit which hosts and networks the prober may contact.</p>
+{{end}}
+{{end}}
+{{end}}

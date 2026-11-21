@@ -1,0 +1,26 @@
+{{define "content"}}
+<h1>Audit trail</h1>
+<p>Chain check: {{if .D.Verify.OK}}<span class="sev ok">consistent</span> ({{.D.Verify.Checked}} events){{else}}<span class="sev critical">broken at event {{.D.Verify.BrokenAtSeq}}</span>, {{.D.Verify.Reason}}{{end}}</p>
+<p class="muted">The hash chain shows internal consistency only. Someone with database-owner access could rewrite it consistently; the external export below is what makes a rewrite detectable (<code>certloomd audit-verify-export FILE --compare</code>).</p>
+<h2>External export</h2>
+{{if .D.Export}}
+<table>
+<thead><tr><th>Sink</th><th>Exported up to</th><th>Lag</th><th>Updated</th><th>Last error</th></tr></thead>
+<tbody>{{range .D.Export}}<tr><td><code>{{.Sink}}</code></td><td>#{{.LastSeq}} of {{.HeadSeq}}</td>
+<td>{{if gt .Lag 0}}<span class="sev warning">{{.Lag}} behind</span>{{else}}<span class="sev ok">up to date</span>{{end}}</td>
+<td>{{ts .UpdatedAt}}</td><td>{{.LastError}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}
+<p class="error">No external audit export is configured (set <code>CERTLOOM_AUDIT_EXPORT</code> on the server). Without it, a database owner could rewrite history undetectably.</p>
+{{end}}
+<h2>Events</h2>
+<table>
+<thead><tr><th>#</th><th>When</th><th>Actor</th><th>Action</th><th>Resource</th><th>Result</th></tr></thead>
+<tbody>
+{{range .D.Events}}
+<tr><td>{{.Seq}}</td><td>{{ts .At}}</td><td>{{.Actor}}</td><td>{{.Action}}</td><td>{{.ResourceType}} <code>{{short .ResourceID}}</code></td><td>{{.Result}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{if eq (len .D.Events) 200}}<p><a href="/audit?after_seq={{(index .D.Events 199).Seq}}">Next page -></a></p>{{end}}
+{{end}}

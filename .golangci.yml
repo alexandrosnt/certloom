@@ -1,0 +1,11 @@
+version: "2"
+linters:
+  enable:
+    - staticcheck
+    - govet
+    - errcheck
+    - gosec
+    - bodyclose
+    - noctx
+    - errorlint
+    - misspell

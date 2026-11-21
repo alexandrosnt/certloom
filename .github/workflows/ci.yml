@@ -1,0 +1,161 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["16", "17", "18"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}-alpine
+        env:
+          POSTGRES_USER: certloom_owner
+          POSTGRES_PASSWORD: ci-only-not-secret
+          POSTGRES_DB: certloom
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U certloom_owner" --health-interval 2s --health-retries 30
+    env:
+      CERTLOOM_TEST_DATABASE_URL: postgres://certloom_owner:ci-only-not-secret@127.0.0.1:5432/certloom?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: vet
+        run: go vet ./...
+      - name: unit + database tests (race)
+        run: go test -race -count=1 $(go list ./... | grep -v /test/e2e)
+      # Real nginx container, real binaries, OIDC against a test IdP, backup/restore
+      # drill and secret scans of the DB dump and server logs.
+      - name: end-to-end
+        run: go test -count=1 -v ./test/e2e/
+      # Full renewal: real Pebble ACME + HTTP-01 + Nginx + certloom-agent + certloomd on a
+      # private Docker network (self-contained; does not use the service DB). Also
+      # installs the certloom-agent .deb on a systemd host and renews through the unit.
+      - name: renewal end-to-end (agent, ACME, Nginx, rollback)
+        if: matrix.postgres == '18'
+        env:
+          CERTLOOM_ACME_E2E: "1"
+        run: go test -count=1 -v -timeout 20m ./test/acme/
+      - name: scale (10k certificates, 2k endpoints; records numbers)
+        if: matrix.postgres == '18'
+        env:
+          CERTLOOM_SCALE: "1"
+        run: go test -count=1 -v -timeout 30m ./test/scale/
+      - name: build
+        run: go build ./...
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: fuzz certificate parser (10 min)
+        run: go test ./internal/certparse -run '^$' -fuzz FuzzParse -fuzztime 10m
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: dependency licenses (no GPL/AGPL; MPL needs a NOTICE entry first)
+        run: >-
+          go run github.com/google/go-licenses/v2@v2.0.1 check ./...
+          --ignore github.com/alexandrosnt/certloom
+          --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC
+
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: every commit has a Signed-off-by line
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            range="$HEAD"   # first push of a branch: check its whole history
+          else
+            range="$BASE..$HEAD"
+          fi
+          missing=0
+          for c in $(git rev-list --no-merges "$range"); do
+            if ! git log -1 --format=%B "$c" | grep -q '^Signed-off-by: '; then
+              echo "missing Signed-off-by: $(git log -1 --format='%h %s' "$c")"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Sign off your commits with 'git commit -s' (see CONTRIBUTING.md)."
+            exit 1
+          fi
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build certloom-agent deb and rpm (nfpm container)
+        run: sh deploy/packaging/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: certloom-agent-packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build container image
+        run: docker build -t certloom:ci .

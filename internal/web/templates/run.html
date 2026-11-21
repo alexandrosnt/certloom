@@ -1,0 +1,35 @@
+{{define "content"}}
+{{$r := .D.R}}
+<h1>Run <code>{{$r.ID}}</code></h1>
+<dl class="kv">
+  <dt>State</dt><dd><span class="sev {{runClass $r.State}}">{{$r.State}}</span></dd>
+  <dt>Deployment</dt><dd>{{if .D.HasDep}}{{.D.Dep.Lineage}} on <a href="/agents/{{.D.Dep.D.AgentID}}">{{.D.Dep.Agent}}</a> / {{.D.Dep.D.Target}}, issuer {{.D.Dep.Issuer}}{{else}}<code>{{$r.DeploymentID}}</code>{{end}}</dd>
+  <dt>Reason</dt><dd>{{$r.Reason}}</dd>
+  <dt>Attempt</dt><dd>{{$r.Attempt}}{{if $r.NextAttemptAt}}, next attempt {{ts $r.NextAttemptAt}}{{end}}</dd>
+  <dt>Started by</dt><dd>{{$r.CreatedBy}}</dd>
+  <dt>Started</dt><dd>{{ts $r.CreatedAt}}</dd>
+  <dt>Updated</dt><dd>{{ts $r.UpdatedAt}}</dd>
+  <dt>Completed</dt><dd>{{ts $r.CompletedAt}}</dd>
+  <dt>Previous certificate</dt><dd>{{if $r.PreviousSHA256}}<a href="/certificates/{{deref $r.PreviousSHA256}}"><code>{{deref $r.PreviousSHA256}}</code></a>{{else}}-{{end}}</dd>
+  <dt>Issued certificate</dt><dd>{{if $r.IssuedSHA256}}<a href="/certificates/{{deref $r.IssuedSHA256}}"><code>{{deref $r.IssuedSHA256}}</code></a>{{else}}-{{end}}</dd>
+</dl>
+{{if $r.Error}}<p class="error" role="alert">{{$r.Error}}</p>{{end}}
+{{if .D.CanCancel}}
+<form method="post" action="/runs/{{$r.ID}}/cancel">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button type="submit">Cancel run</button>
+</form>
+{{end}}
+<h2>Timeline</h2>
+{{if $r.Steps}}
+<table>
+<thead><tr><th>When</th><th>State</th><th>Detail</th></tr></thead>
+<tbody>
+{{range $r.Steps}}
+<tr><td>{{ts .At}}</td><td><span class="sev {{runClass .State}}">{{.State}}</span></td><td class="wrap">{{.Detail}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No steps recorded.</p>{{end}}
+<p><a href="/runs">All runs</a></p>
+{{end}}

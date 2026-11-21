@@ -1,0 +1,44 @@
+{{define "content"}}
+{{$e := .D.E}}
+<h1>{{$e.Host}}:{{$e.Port}}</h1>
+<dl class="kv">
+  <dt>SNI</dt><dd>{{if $e.SNI}}{{$e.SNI}}{{else}}{{$e.Host}}{{end}}</dd>
+  <dt>Currently serving</dt><dd>{{if $e.LastLeafSHA256}}<a href="/certificates/{{deref $e.LastLeafSHA256}}"><code>{{deref $e.LastLeafSHA256}}</code></a>{{else}}-{{end}}</dd>
+  <dt>Expected lineage</dt><dd>{{if $e.LineageID}}{{deref $e.LineageID}}{{else}}<span class="muted">none bound</span>{{end}}</dd>
+  <dt>Probe interval</dt><dd>{{$e.IntervalSeconds}} s; next {{ts $e.NextProbeAt}}</dd>
+  <dt>Consecutive failures</dt><dd>{{$e.ConsecutiveFailures}}</dd>
+</dl>
+{{if .D.CanManage}}
+<form method="post" action="/endpoints/{{$e.ID}}/probe">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button type="submit">Probe now</button>
+</form>
+{{end}}
+<h2>Findings</h2>
+{{template "findinglist" $e.Findings}}
+<h2>Recent observations</h2>
+{{if $e.Observations}}
+<table>
+<thead><tr><th>When</th><th>Address</th><th>Leaf</th><th>TLS</th><th>Latency</th><th>Error</th></tr></thead>
+<tbody>
+{{range $e.Observations}}
+<tr>
+  <td>{{ts .ObservedAt}}</td><td>{{.Address}}</td>
+  <td>{{if .LeafSHA256}}<a href="/certificates/{{deref .LeafSHA256}}"><code>{{short .LeafSHA256}}</code></a>{{else}}-{{end}}</td>
+  <td>{{.TLSVersion}} {{.Cipher}}</td><td>{{.LatencyMS}} ms</td>
+  <td>{{if .ErrorClass}}<span class="sev warning">{{.ErrorClass}}</span> {{.Error}}{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">Not probed yet.</p>{{end}}
+{{end}}
+
+{{define "findinglist"}}
+{{if .}}
+<table>
+<thead><tr><th>Severity</th><th>Check</th><th>Message</th><th>What to do</th><th>Since</th></tr></thead>
+<tbody>{{range .}}<tr><td><span class="sev {{.Severity}}">{{.Severity}}</span></td><td>{{.Check}}</td><td>{{.Message}}</td><td>{{.Remediation}}</td><td>{{ts .FirstSeen}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="muted">No open findings.</p>{{end}}
+{{end}}

@@ -1,0 +1,35 @@
+{{define "content"}}
+<h1>Certificates</h1>
+<form method="get" class="filters">
+  <input name="search" value="{{.D.Q.Get "search"}}" placeholder="Name, subject or SAN" aria-label="Search">
+  <select name="expiring" aria-label="Expiring within">
+    <option value="">Any expiry</option>
+    <option value="0d" {{if eq (.D.Q.Get "expiring") "0d"}}selected{{end}}>Expired</option>
+    <option value="7d" {{if eq (.D.Q.Get "expiring") "7d"}}selected{{end}}>Within 7 days</option>
+    <option value="30d" {{if eq (.D.Q.Get "expiring") "30d"}}selected{{end}}>Within 30 days</option>
+    <option value="90d" {{if eq (.D.Q.Get "expiring") "90d"}}selected{{end}}>Within 90 days</option>
+  </select>
+  <label><input type="checkbox" name="include_ca" {{if eq (.D.Q.Get "include_ca") "on"}}checked{{end}}> Include CA certificates</label>
+  <button type="submit">Filter</button>
+</form>
+{{if .D.Certs}}
+<table>
+<thead><tr><th>Name</th><th>SANs</th><th>Issuer</th><th>Expires</th><th>Left</th><th>Key</th><th>Source</th></tr></thead>
+<tbody>
+{{range .D.Certs}}
+<tr>
+  <td><a href="/certificates/{{.SHA256}}">{{if .CommonName}}{{.CommonName}}{{else}}{{short .SHA256}}{{end}}</a></td>
+  <td class="wrap">{{join .DNSNames ", "}}</td>
+  <td class="wrap">{{.Issuer}}</td>
+  <td>{{ts .NotAfter}}</td>
+  <td><span class="sev {{urgency .NotAfter}}">{{left .NotAfter}}</span></td>
+  <td>{{.KeyAlgorithm}} {{.KeyBits}}</td>
+  <td>{{.Source}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p class="muted">No certificates match. Import with <code>certloom inventory import FILE</code> or add endpoints to probe.</p>
+{{end}}
+{{end}}

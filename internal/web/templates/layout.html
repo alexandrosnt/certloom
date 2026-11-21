@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} - certloom</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+{{if .Principal.OrgID}}
+<header class="top">
+  <a class="brand" href="/">certloom</a>
+  <nav>
+    <a href="/" {{if eq .Nav "overview"}}aria-current="page"{{end}}>Overview</a>
+    <a href="/certificates" {{if eq .Nav "certificates"}}aria-current="page"{{end}}>Certificates</a>
+    <a href="/endpoints" {{if eq .Nav "endpoints"}}aria-current="page"{{end}}>Endpoints</a>
+    <a href="/findings" {{if eq .Nav "findings"}}aria-current="page"{{end}}>Findings</a>
+    <a href="/alerts" {{if eq .Nav "alerts"}}aria-current="page"{{end}}>Alerts</a>
+    <a href="/lineages" {{if eq .Nav "lineages"}}aria-current="page"{{end}}>Lineages</a>
+    <a href="/agents" {{if eq .Nav "agents"}}aria-current="page"{{end}}>Agents</a>
+    <a href="/deployments" {{if eq .Nav "deployments"}}aria-current="page"{{end}}>Deployments</a>
+    <a href="/runs" {{if eq .Nav "runs"}}aria-current="page"{{end}}>Runs</a>
+    {{if can .Principal "audit:view"}}<a href="/audit" {{if eq .Nav "audit"}}aria-current="page"{{end}}>Audit</a>{{end}}
+  </nav>
+  <form method="post" action="/logout" class="who">
+    {{if .CSRF}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}
+    <span title="{{.Principal.Actor}}">{{.Principal.Role}}</span>
+    <button type="submit" class="link">Sign out</button>
+  </form>
+</header>
+{{end}}
+<main>
+{{if .Flash}}<p class="flash" role="status">{{.Flash}}</p>{{end}}
+{{template "content" .}}
+</main>
+<footer class="foot">Monitoring for all endpoints. Automated renewal and deployment only for Linux + Nginx + ACME HTTP-01 targets managed by certloom-agent (use the CLI).</footer>
+</body>
+</html>

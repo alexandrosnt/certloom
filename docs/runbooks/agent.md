@@ -1,0 +1,171 @@
+# Running certloom-agent next to Nginx
+
+The agent runs on the host that serves TLS. It:
+- generates each certificate's private key locally, and the key never leaves the host;
+- obtains certificates via ACME HTTP-01, using Nginx to serve the challenge files;
+- switches the certificate in **one atomic symlink rename**;
+- runs `nginx -t`, reloads, and verifies the served fingerprint;
+- restores the previous certificate when anything fails.
+
+The control plane can only name a *target*. Paths, commands and the names a host may
+obtain certificates for all come from this host's config file.
+
+## 1. Enable agents on the control plane
+
+```sh
+certloomd gen-kek > /etc/certloom/kek && chmod 600 /etc/certloom/kek     # back this up separately from the DB
+CERTLOOM_KEK_FILE=/etc/certloom/kek
+CERTLOOM_AGENT_LISTEN=0.0.0.0:8444
+CERTLOOM_AGENT_SERVER_NAMES=certloom.example.internal          # name(s) agents use to reach port 8444
+CERTLOOM_AGENT_PUBLIC_URL=https://certloom.example.internal:8444
+```
+
+Agents dial out to port 8444 (mutual TLS 1.3). No inbound access to agent hosts is needed.
+
+## 2. Configure the agent: `/etc/certloom-agent/config.yaml`
+
+```yaml
+server: https://certloom.example.internal:8444
+state_dir: /var/lib/certloom-agent          # holds keys (0600) and local state; back up or treat as disposable
+name: web-01
+targets:
+  - name: www
+    type: nginx
+    live_link: /etc/certloom/live/www       # symlink managed by the agent
+    webroot: /var/www/acme             # HTTP-01 challenge files are written here
+    test_command: [nginx, -t]
+    reload_command: [systemctl, reload, nginx]
+    verify_address: 127.0.0.1:443
+    allowed_sans: [www.example.com, "*.example.com"]   # "*.x" = any ONE label under x; wildcard certificates are refused
+# allowed_tasks: [inventory.scan, verify.local]       # optional: restrict to monitor-only
+```
+
+Check it with `certloom-agent check-config --config /etc/certloom-agent/config.yaml`.
+
+## 3. Point Nginx at the live link
+
+```nginx
+server {
+    listen 80;
+    server_name www.example.com;
+    location /.well-known/acme-challenge/ { root /var/www/acme; }
+    location / { return 301 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl;
+    server_name www.example.com;
+    ssl_certificate     /etc/certloom/live/www/fullchain.pem;
+    ssl_certificate_key /etc/certloom/live/www/privkey.pem;
+}
+```
+
+`/etc/certloom/live/www` must be a **symlink** to a directory holding `fullchain.pem` and
+`privkey.pem`. To migrate an existing setup, copy your current files into a directory,
+then run `ln -sfn /that/dir /etc/certloom/live/www`. The agent refuses to replace a regular
+directory.
+
+## 4. Enroll (once)
+
+On a workstation:
+
+```sh
+certloom agent token --name web-01      # prints the enroll command and a one-time token (valid <= 1h)
+```
+
+On the host, paste the token when prompted. The `--ca-hash` pins the control plane on
+first contact:
+
+```sh
+certloom-agent enroll --config /etc/certloom-agent/config.yaml --ca-hash sha256:...
+certloom-agent run --config /etc/certloom-agent/config.yaml      # run under systemd in production
+```
+
+## 4a. Install as a systemd service (deb / rpm)
+
+Build the packages (needs Go and Docker; nfpm runs from its container image):
+
+```sh
+deploy/packaging/build.sh                         # dist/certloom-agent_<version>_<arch>.deb and .rpm
+VERSION=1.2.3 GOARCH=arm64 deploy/packaging/build.sh
+```
+
+The package installs:
+
+| Path | |
+|---|---|
+| `/usr/bin/certloom-agent` | static binary |
+| `/usr/lib/systemd/system/certloom-agent.service` | the unit |
+| `/etc/certloom-agent/config.yaml` | example config; a conffile, never overwritten on upgrade |
+| `/var/lib/certloom-agent` (0700), `/etc/certloom/live` | created by the post-install script |
+
+Installing does **not** enable or start the service, because the agent has to be enrolled
+first:
+
+```sh
+apt install ./certloom-agent_1.2.3-1_amd64.deb         # or: dnf install ./certloom-agent-1.2.3-1.x86_64.rpm
+vi /etc/certloom-agent/config.yaml
+certloom-agent check-config
+certloom-agent enroll --ca-hash sha256:...             # paste the token from `certloom agent token`
+systemctl enable --now certloom-agent
+journalctl -u certloom-agent -f
+```
+
+Upgrades restart the agent only if it is already running. Removing the package stops and
+disables the service but keeps `/var/lib/certloom-agent` (enrollment identity and private keys)
+and `/etc/certloom`; delete them by hand to decommission the host.
+
+**reload_command.** When nginx runs as a systemd unit, use
+`reload_command: [systemctl, reload, nginx]`. systemd then performs the reload with the
+unit's own `ExecReload`, tracks it in the unit state and the journal, and nginx keeps its
+main PID (no restart, no dropped connections). Use `[nginx, -s, reload]` only when nginx
+is not managed by systemd (containers, hand-started servers). Keep `test_command:
+[nginx, -t]` in both cases: a failed test rolls back before anything is reloaded.
+
+**Sandbox.** The unit runs as root (it must run the test and reload commands) but with
+systemd sandboxing: `/usr`, `/boot` and `/etc` are read-only except `/etc/certloom`; `/home`,
+`/root` and `/run/user` are hidden; no new privileges, a reduced capability set, private
+`/tmp` and devices, and only unix/IPv4/IPv6 sockets. `/var` stays writable, so
+`state_dir` under `/var/lib` and webroots such as `/var/www/acme` work as is. For a
+`live_link` or `webroot` elsewhere, add a drop-in rather than editing the unit:
+
+```sh
+systemctl edit certloom-agent
+#   [Service]
+#   ReadWritePaths=/srv/tls/live
+systemctl restart certloom-agent
+```
+
+`systemd-analyze security certloom-agent` lists the effective settings.
+
+## 5. Wire up renewal
+
+```sh
+certloom issuer create le-staging --directory https://acme-staging-v02.api.letsencrypt.org/directory --agree-tos
+certloom scope create web --allow-host '*.example.com'
+certloom endpoint add www.example.com --scope web            # used for external verification
+certloom deployment create --lineage www --agent web-01 --target www --issuer le-staging \
+    --endpoint <endpoint-id> --san www.example.com
+certloom deployment renew <deployment-id>
+certloom run show <run-id>
+```
+
+A run is `verified` only when **both** checks pass:
+- the agent's local handshake serves the new fingerprint;
+- the control plane's own probe of the endpoint serves the new fingerprint.
+
+Afterwards the deployment's next renewal time comes from the CA's ARI window when
+the CA offers one, and otherwise from 2/3 of the certificate's lifetime.
+
+## Failure behavior
+
+| What happens | Result |
+|---|---|
+| ACME error (rate limit, validation failure) | Retried with backoff, 3 attempts; then `failed`; nothing deployed |
+| `nginx -t` fails | Link restored; Nginx was never reloaded; run `rolled_back` |
+| Reload fails | Link restored, reload retried; `rolled_back` if that succeeds, otherwise escalated |
+| Served fingerprint != new certificate | Rollback task; `rolled_back` |
+| Rollback itself fails | `failed` + critical notification: **manual intervention** |
+| Agent offline | Tasks wait until they expire (issue 2h, deploy 30m), then retry or fail |
+| Agent revoked | Requests refused immediately; active runs fail |
+
+Revoke a host: `certloom agent revoke web-01`.

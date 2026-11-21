@@ -1,0 +1,809 @@
+openapi: 3.0.3
+info:
+  title: certloom control plane API
+  version: "1.0.0-m1"
+  description: |
+    Certificate lifecycle management API (ADR-0010). M1 scope: inventory and
+    monitoring only.
+
+    Conventions:
+    - Authentication: `Authorization: Bearer <token>`. The token is an API token
+      (`certloom_...`) or an OIDC session (`certlooms_...`).
+    - Errors use RFC 9457 problem details (`application/problem+json`).
+    - Every response carries `X-Request-Id`. The same id appears in audit events.
+    - `POST` requests accept `Idempotency-Key`. A retry with the same key and an
+      identical body replays the stored response (`Idempotent-Replayed: true`).
+      The same key with a different request returns 422; a request still in
+      progress returns 409. `POST /tokens` rejects the header, because its
+      response contains a secret.
+    - Mutable resources return an `ETag` header (`"v<version>"`). Send it back as
+      `If-Match` on `PUT`; a stale value returns 412.
+    - Rate limits are per principal (`RateLimit-Limit`, `RateLimit-Remaining`).
+      Throttled requests return 429 with `Retry-After`. Limits apply per server
+      process.
+    - Lists return `{items: [...], next_cursor?: string}`.
+  license:
+    name: Apache-2.0
+servers:
+  - url: /
+security:
+  - bearer: []
+
+tags:
+  - name: system
+  - name: auth
+  - name: inventory
+  - name: endpoints
+  - name: ownership
+  - name: alerts
+  - name: admin
+  - name: audit
+  - name: agents
+  - name: renewal
+
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      summary: Liveness
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+  /readyz:
+    get:
+      tags: [system]
+      summary: Readiness (database reachable)
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "503": { $ref: "#/components/responses/Problem" }
+
+  /api/v1/auth/config:
+    get:
+      tags: [auth]
+      summary: Public sign-in options
+      security: []
+      responses:
+        "200":
+          description: Sign-in configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  oidc: { type: boolean }
+                  issuer: { type: string }
+                  cli_client_id: { type: string }
+                  device_authorization_endpoint: { type: string }
+                  token_endpoint: { type: string }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v1/auth/oidc/session:
+    post:
+      tags: [auth]
+      summary: Exchange a device-flow ID token for a session (CLI sign-in)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token: { type: string }
+                org: { type: string, description: "Organization name, if the identity belongs to several" }
+      responses:
+        "201":
+          description: Session created. The token is returned only once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  email: { type: string }
+                  role: { $ref: "#/components/schemas/Role" }
+                  org_id: { type: string }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v1/auth/session:
+    delete:
+      tags: [auth]
+      summary: Revoke the current session (no-op for API tokens)
+      responses:
+        "204": { description: Revoked }
+        "401": { $ref: "#/components/responses/Problem" }
+  /api/v1/whoami:
+    get:
+      tags: [auth]
+      summary: The authenticated principal
+      responses:
+        "200":
+          description: Principal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  org_id: { type: string }
+                  actor: { type: string }
+                  role: { $ref: "#/components/schemas/Role" }
+                  permissions: { type: array, items: { type: string } }
+        "401": { $ref: "#/components/responses/Problem" }
+  /api/v1/members:
+    get:
+      tags: [admin]
+      summary: List single sign-on members (owner)
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+        "403": { $ref: "#/components/responses/Problem" }
+    post:
+      tags: [admin]
+      summary: Add a member by verified email (owner)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string, format: email }
+                role: { $ref: "#/components/schemas/Role" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/members/{id}:
+    delete:
+      tags: [admin]
+      summary: Remove a member and end their sessions (owner)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  /api/v1/overview:
+    get:
+      tags: [inventory]
+      summary: Headline metrics, each with definition and denominator
+      responses:
+        "200":
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key: { type: string }
+                        label: { type: string }
+                        value: { type: integer }
+                        denominator: { type: integer }
+                        definition: { type: string }
+                        link: { type: string }
+  /api/v1/certificates:
+    get:
+      tags: [inventory]
+      summary: List certificates, soonest expiry first
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: expiring, in: query, description: "Horizon such as 30d; 0d = expired", schema: { type: string } }
+        - { name: include_ca, in: query, schema: { type: boolean } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Certificates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Certificate" } }
+                  next_cursor: { type: string }
+  /api/v1/certificates/{fp}:
+    get:
+      tags: [inventory]
+      summary: Certificate detail (full SHA-256 or a unique prefix of at least 8 characters)
+      parameters:
+        - { name: fp, in: path, required: true, schema: { type: string, pattern: "^[0-9a-fA-F]{8,64}$" } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/certificates/import:
+    post:
+      tags: [inventory]
+      summary: Import PEM, DER or PKCS#12. Private keys are never stored.
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { name: dry_run, in: query, schema: { type: boolean } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: { type: string, format: byte, description: Base64 file contents (<= 1 MiB) }
+                password: { type: string, format: password, description: "PKCS#12 only; never logged or stored" }
+                lineage: { type: string }
+                team: { type: string }
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  format: { type: string, enum: [pem, der, pkcs12] }
+                  imported: { type: array, items: { type: string } }
+                  already_known: { type: array, items: { type: string } }
+                  private_key_seen: { type: boolean }
+                  key_matches_leaf: { type: boolean }
+                  warnings: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+
+  /api/v1/scopes:
+    get:
+      tags: [endpoints]
+      summary: List probe scopes
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [endpoints]
+      summary: Create a probe scope (owner). Overrides of denied address classes are audited.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                config:
+                  type: object
+                  properties:
+                    allow_cidrs: { type: array, items: { type: string } }
+                    allow_hosts: { type: array, items: { type: string } }
+                    ports: { type: array, items: { type: integer } }
+                    allow_loopback: { type: boolean }
+                    allow_private: { type: boolean }
+                    allow_link_local: { type: boolean }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/endpoints:
+    get:
+      tags: [endpoints]
+      summary: List endpoints
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [endpoints]
+      summary: Add an endpoint (must be allowed by its scope)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [host, scope]
+              properties:
+                host: { type: string }
+                port: { type: integer, default: 443 }
+                sni: { type: string }
+                scope: { type: string }
+                lineage: { type: string }
+                team: { type: string }
+                interval_seconds: { type: integer, minimum: 60 }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/endpoints/{id}:
+    get:
+      tags: [endpoints]
+      summary: Endpoint with recent observations and open findings
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Versioned" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/endpoints/{id}/probe:
+    post:
+      tags: [endpoints]
+      summary: Probe now
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/endpoints/{id}/lineage:
+    put:
+      tags: [ownership]
+      summary: Bind the lineage the endpoint is expected to serve
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [lineage], properties: { lineage: { type: string } } }
+      responses:
+        "204": { description: Bound }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+  /api/v1/findings:
+    get:
+      tags: [inventory]
+      summary: List findings
+      parameters:
+        - { name: severity, in: query, schema: { type: string, enum: [warning, critical] } }
+        - { name: subject_type, in: query, schema: { type: string, enum: [certificate, endpoint, lineage] } }
+        - { name: subject_id, in: query, schema: { type: string } }
+        - { name: check, in: query, schema: { type: string } }
+        - { name: include_resolved, in: query, schema: { type: boolean } }
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+
+  /api/v1/teams:
+    get:
+      tags: [ownership]
+      summary: List teams
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [ownership]
+      summary: Create a team
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string }, contact: { type: string } } }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/lineages:
+    get:
+      tags: [ownership]
+      summary: List lineages
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [ownership]
+      summary: Create a lineage
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                team: { type: string }
+                current_sha256: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/lineages/{id}:
+    get:
+      tags: [ownership]
+      summary: Lineage by id or name
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Versioned" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/lineages/{id}/owner:
+    put:
+      tags: [ownership]
+      summary: Assign the owning team
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [team], properties: { team: { type: string } } }
+      responses:
+        "204": { description: Assigned }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+
+  /api/v1/alerts:
+    get:
+      tags: [alerts]
+      summary: List alerts
+      parameters:
+        - { name: state, in: query, description: "Comma-separated: open,acked,resolved,suppressed", schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+  /api/v1/alerts/{id}/ack:
+    post:
+      tags: [alerts]
+      summary: Acknowledge an open alert
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "204": { description: Acknowledged }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/channels:
+    get:
+      tags: [alerts]
+      summary: List notification channels
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [alerts]
+      summary: Create a webhook or email channel (owner). Secrets are passed as credential references.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kind, config]
+              properties:
+                name: { type: string }
+                kind: { type: string, enum: [webhook, email] }
+                config: { type: object }
+                credential_ref: { type: string, example: "env:CERTLOOM_WEBHOOK_SECRET" }
+                min_severity: { type: string, enum: [info, warning, critical] }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/channels/{id}/test:
+    post:
+      tags: [alerts]
+      summary: Queue a test notification
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  /api/v1/tokens:
+    get:
+      tags: [admin]
+      summary: List API tokens (metadata only)
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [admin]
+      summary: Create a token. The secret is returned once. Idempotency-Key is rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, role]
+              properties:
+                name: { type: string }
+                role: { $ref: "#/components/schemas/Role" }
+                ttl_seconds: { type: integer }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/tokens/{id}:
+    delete:
+      tags: [admin]
+      summary: Revoke a token
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Revoked }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/automation/pause:
+    post:
+      tags: [admin]
+      summary: Pause probing and sweeps for this organization (kill switch)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /api/v1/automation/resume:
+    post:
+      tags: [admin]
+      summary: Resume automation
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /api/v1/agents:
+    get:
+      tags: [agents]
+      summary: List agents with derived health (active, stale, offline, revoked, never-seen)
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+  /api/v1/agents/enrollment-tokens:
+    post:
+      tags: [agents]
+      summary: Create a one-time agent enrollment token (owner; TTL <= 1h). Returns the CA hash to pin.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, ttl_seconds: { type: integer, maximum: 3600 } } }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/agents/{id}/revoke:
+    post:
+      tags: [agents]
+      summary: Revoke an agent immediately; pending tasks expire (owner)
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "204": { description: Revoked }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/agents/{id}/inventory:
+    post:
+      tags: [agents]
+      summary: Ask the agent to report certificate files and Certbot lineages (read-only)
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/issuers:
+    get:
+      tags: [renewal]
+      summary: List ACME issuers
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [renewal]
+      summary: Register an ACME issuer (owner). agree_tos must be true.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, directory_url, agree_tos]
+              properties:
+                name: { type: string }
+                directory_url: { type: string, format: uri }
+                email: { type: string }
+                agree_tos: { type: boolean }
+                profile: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/deployments:
+    get:
+      tags: [renewal]
+      summary: List deployments (lineage -> agent target -> issuer)
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [renewal]
+      summary: Create a deployment (owner). SANs must be in the target's allowed_sans.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lineage, agent, target, issuer, sans]
+              properties:
+                lineage: { type: string }
+                agent: { type: string }
+                target: { type: string }
+                issuer: { type: string }
+                endpoint: { type: string, description: Endpoint id for external verification }
+                sans: { type: array, items: { type: string } }
+                maintenance_window: { type: string, description: "Weekly window for activation, e.g. \"Mon-Fri 02:00-05:00 Europe/Athens\"" }
+                window_emergency: { type: string, enum: [block, renew_outside_window], description: What to do when no window is left before the safety deadline }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/deployments/{id}/renew:
+    post:
+      tags: [renewal]
+      summary: Start a renewal run now (409 if one is active)
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/deployments/{id}/window:
+    put:
+      tags: [renewal]
+      summary: Set or clear (empty string) the maintenance window; waiting or blocked runs are re-evaluated
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [maintenance_window]
+              properties:
+                maintenance_window: { type: string }
+                window_emergency: { type: string, enum: [block, renew_outside_window] }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/runs:
+    get:
+      tags: [renewal]
+      summary: Recent renewal runs
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+  /api/v1/runs/{id}:
+    get:
+      tags: [renewal]
+      summary: A run with its step timeline
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/runs/{id}/cancel:
+    post:
+      tags: [renewal]
+      summary: Cancel a run that has not yet changed the target
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "204": { description: Cancelled }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/policy:
+    get:
+      tags: [admin]
+      summary: The active monitoring policy (defaults if none applied)
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+    put:
+      tags: [admin]
+      summary: Apply a new policy version (YAML or JSON body)
+      parameters:
+        - { name: dry_run, in: query, description: Validate and show impact without applying, schema: { type: boolean } }
+      requestBody:
+        required: true
+        content:
+          application/yaml: { schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+
+  /api/v1/audit:
+    get:
+      tags: [audit]
+      summary: Audit events in sequence order
+      parameters:
+        - { name: after_seq, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 1000 } }
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/audit/verify:
+    get:
+      tags: [audit]
+      summary: Recompute the in-database hash chain (internal consistency only)
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /api/v1/audit/export-status:
+    get:
+      tags: [audit]
+      summary: External audit export progress per sink
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      schema: { type: string, maxLength: 255 }
+    IfMatch:
+      name: If-Match
+      in: header
+      description: ETag from a previous GET, e.g. "v3"
+      schema: { type: string }
+  schemas:
+    Role:
+      type: string
+      enum: [owner, operator, viewer, auditor]
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        remediation: { type: string }
+        request_id: { type: string }
+    Certificate:
+      type: object
+      properties:
+        sha256: { type: string }
+        serial: { type: string }
+        subject: { type: string }
+        issuer: { type: string }
+        common_name: { type: string }
+        dns_names: { type: array, items: { type: string } }
+        ip_addresses: { type: array, items: { type: string } }
+        not_before: { type: string, format: date-time }
+        not_after: { type: string, format: date-time }
+        key_algorithm: { type: string }
+        key_bits: { type: integer }
+        signature_algorithm: { type: string }
+        is_ca: { type: boolean }
+        self_signed: { type: boolean }
+        source: { type: string }
+  responses:
+    Problem:
+      description: Error (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Status:
+      description: Status
+      content:
+        application/json:
+          schema: { type: object }
+    Object:
+      description: Resource
+      content:
+        application/json:
+          schema: { type: object }
+    Versioned:
+      description: Resource with an ETag header for If-Match
+      headers:
+        ETag: { schema: { type: string } }
+      content:
+        application/json:
+          schema: { type: object }
+    List:
+      description: List
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              items: { type: array, items: { type: object } }
+              next_cursor: { type: string }

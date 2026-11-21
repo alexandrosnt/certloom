@@ -1,0 +1,25 @@
+# certloom-agent configuration. See docs/runbooks/agent.md.
+#
+# Edit this file, check it with `certloom-agent check-config`, enroll with
+# `certloom-agent enroll --ca-hash sha256:...`, then `systemctl enable --now certloom-agent`.
+server: https://certloom.example.internal:8444
+# Keys and enrollment identity. The systemd unit creates this directory (0700).
+state_dir: /var/lib/certloom-agent
+# Name shown in `certloom agent list`; defaults to the hostname.
+# name: web-01
+targets:
+  - name: www
+    type: nginx
+    # Symlink managed by the agent; nginx reads <live_link>/fullchain.pem and
+    # <live_link>/privkey.pem. The systemd unit can write under /etc/certloom only;
+    # add a drop-in with ReadWritePaths= for other locations.
+    live_link: /etc/certloom/live/www
+    # HTTP-01 challenge files are written under <webroot>/.well-known/acme-challenge.
+    webroot: /var/www/acme
+    test_command: [nginx, -t]
+    # With nginx managed by systemd, reload through systemd so the unit's
+    # state stays accurate. Use [nginx, -s, reload] when nginx is not a unit.
+    reload_command: [systemctl, reload, nginx]
+    verify_address: 127.0.0.1:443
+    allowed_sans: [www.example.com]
+# allowed_tasks: [inventory.scan, verify.local]   # optional: monitor only

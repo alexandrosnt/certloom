@@ -1,0 +1,23 @@
+{{define "content"}}
+<h1>Runs</h1>
+<p class="muted">Recent renewal runs, newest first.</p>
+{{if .D.Runs}}
+<table>
+<thead><tr><th>Run</th><th>State</th><th>Deployment</th><th>Reason</th><th>Attempt</th><th>Started</th><th>Updated</th></tr></thead>
+<tbody>
+{{range .D.Runs}}
+{{$d := index $.D.Deps .DeploymentID}}
+<tr>
+  <td><a href="/runs/{{.ID}}"><code>{{.ID}}</code></a></td>
+  <td><span class="sev {{runClass .State}}">{{.State}}</span></td>
+  <td>{{if $d.D}}{{$d.Lineage}} <span class="muted">on {{$d.Agent}} / {{$d.D.Target}}</span>{{else}}<code>{{.DeploymentID}}</code>{{end}}</td>
+  <td>{{.Reason}}</td>
+  <td>{{.Attempt}}</td>
+  <td>{{ts .CreatedAt}}</td>
+  <td>{{ts .UpdatedAt}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No runs yet. Runs start automatically when a deployment is due, or with Renew now on the deployments page.</p>{{end}}
+{{end}}

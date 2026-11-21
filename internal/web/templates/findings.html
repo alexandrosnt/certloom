@@ -1,0 +1,18 @@
+{{define "content"}}
+<h1>Open findings</h1>
+<p><a href="/findings">All</a> - <a href="/findings?severity=critical">Critical</a> - <a href="/findings?severity=warning">Warning+</a></p>
+{{if .D}}
+<table>
+<thead><tr><th>Severity</th><th>Check</th><th>Subject</th><th>Message</th><th>What to do</th><th>Last seen</th></tr></thead>
+<tbody>
+{{range .D}}
+<tr>
+  <td><span class="sev {{.Severity}}">{{.Severity}}</span></td><td>{{.Check}}</td>
+  <td>{{if eq .SubjectType "endpoint"}}<a href="/endpoints/{{.SubjectID}}">endpoint</a>{{else}}<a href="/certificates/{{.SubjectID}}">certificate {{short .SubjectID}}</a>{{end}}</td>
+  <td>{{.Message}}</td><td>{{.Remediation}}</td><td>{{ts .LastSeen}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No open findings.</p>{{end}}
+{{end}}

@@ -1,0 +1,15 @@
+{{define "content"}}
+<h1>Lineages</h1>
+<p class="muted">A lineage is the logical slot that successive certificates fill (e.g. "www production"). Bind endpoints to a lineage to detect when they serve the wrong certificate.</p>
+{{if .D}}
+<table>
+<thead><tr><th>Name</th><th>Management level</th><th>Owner team</th><th>Current certificate</th></tr></thead>
+<tbody>
+{{range .D}}
+<tr><td>{{.Name}}</td><td>{{.ManagementLevel}}</td><td>{{if .TeamID}}{{deref .TeamID}}{{else}}<span class="sev warning">unowned</span>{{end}}</td>
+<td>{{if .CurrentSHA256}}<a href="/certificates/{{deref .CurrentSHA256}}"><code>{{short .CurrentSHA256}}</code></a>{{else}}-{{end}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No lineages yet. Create one with <code>certloom lineage create</code> or <code>certloom inventory import --lineage NAME</code>.</p>{{end}}
+{{end}}

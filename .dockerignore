@@ -1,0 +1,8 @@
+.git
+bin
+dist
+deploy/compose/.env
+*.pem
+*.key
+*.pfx
+*.p12
