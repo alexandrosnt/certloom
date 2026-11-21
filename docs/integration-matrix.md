@@ -53,6 +53,7 @@ provider behaves as the fake does; only a live run does.
 | Azure Key Vault observation | M5 | discover, read_metadata: certificates, AutoRenew policy, pending/failed operations, versions; new-version adoption by probed endpoints (polling instead of Event Grid) | The secrets API (private keys); Event Grid push | Key Vault Reader | mock API only: the Azure SDK with its challenge-based auth against a TLS fake, certificates paths only. Not live-verified yet |
 | Google Certificate Manager / CA Service observation | M5 | discover, read_metadata: certificates with managed state and authorization failures, certificate map entries as usage; CA pools and authorities | Any write; classic Compute SSL certificates | `roles/certificatemanager.viewer`, `roles/privateca.auditor` | mock API only (REST fake with paging and per-scope errors). Not live-verified yet |
 | Cloudflare edge packs and Origin CA observation | M5 | discover, read_metadata: certificate packs of all types (metadata only; the API returns no certificate) and Origin CA certificates (marked not publicly trusted) | Any write; Keyless SSL; mTLS client certificates | Token with Zone SSL and Certificates Read (+ Zone Read without a zone list) | mock API only. Not live-verified yet; the exact token permission for the Origin CA list is unconfirmed |
+| Terraform/OpenTofu provider (separate repository `terraform-provider-certloom`) | M6 | desired-state resources for teams, scopes, endpoints, channels, issuers (with EAB), DNS solvers, templates and the policy; lookups for teams, scopes, issuers and agents | Certificates and private keys (never in plan or state); webhook endpoints, API tokens and enrollment tokens (server-generated secrets) | API token with the matching role | acceptance tests against a real certloomd on Terraform and OpenTofu, each scanning plan and state for every secret used; Go client tested against the real API (`internal/api` TestGoClient) |
 
 ## Deferred (planned; no support is claimed)
 
@@ -61,5 +62,5 @@ provider behaves as the fake does; only a live run does.
 | `certloom-dns-lego` (all lego DNS providers as one plugin) | M3+ | ChallengeSolver | Needs a long-running transport: many lego providers keep record ids in memory between present and cleanup |
 | Docker Compose / Swarm | M4+ | discover | Versioned secret rotation for Swarm |
 | Vault PKI, step-ca | M7 | request (ACME) | |
-| Terraform/OpenTofu provider, Ansible collection | M6 | desired-state resources | Never put keys or secrets in state |
+| Ansible collection | M6 | desired-state resources | Never put keys or secrets in state |
 | SCEP / EST / CMP, device certificates | Research | - | Only if a concrete use case requires it |
