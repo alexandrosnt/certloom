@@ -83,12 +83,21 @@ type Target struct {
 	ACME        bool     `json:"acme"` // has an HTTP-01 webroot
 }
 
+// DNSSolver describes one DNS-01 solver configured on an agent host.
+type DNSSolver struct {
+	Name     string   `json:"name"`
+	Provider string   `json:"provider"` // rfc2136, cloudflare or plugin:<name>
+	Zones    []string `json:"zones"`
+}
+
 // Heartbeat reports liveness and capabilities.
 type Heartbeat struct {
 	Version  string   `json:"version"`
 	Hostname string   `json:"hostname"`
 	Targets  []Target `json:"targets"`
 	Tasks    []string `json:"tasks"` // allowed task types
+	// DNSSolvers lists the host's DNS-01 solvers; credentials are never reported.
+	DNSSolvers []DNSSolver `json:"dns_solvers,omitempty"`
 }
 
 // Task is the signed unit of work.
@@ -175,6 +184,8 @@ type IssuePayload struct {
 	SANs           []string `json:"sans"`
 	// KeyAlgorithm is the key to generate; empty means KeyECDSAP256.
 	KeyAlgorithm string `json:"key_algorithm,omitempty"`
+	// Challenge is ChallengeHTTP01 or ChallengeDNS01; empty means HTTP-01.
+	Challenge string `json:"challenge,omitempty"`
 }
 
 // KeyECDSAP256 is the only key algorithm agents generate so far.
@@ -240,4 +251,42 @@ type CertbotLineage struct {
 	Server        string `json:"server,omitempty"`
 	Version       string `json:"version,omitempty"` // certbot version that last wrote the renewal conf
 	ARIAware      bool   `json:"ari_aware"`         // version >= 4.1.0
+}
+
+// Challenge types.
+const (
+	ChallengeHTTP01 = "http-01"
+	ChallengeDNS01  = "dns-01"
+)
+
+// SANAllowed matches a SAN against an allowlist. An entry matches itself, and
+// an entry "*.parent" also matches any name exactly one label below parent.
+// A wildcard SAN is allowed only when wildcards is set (DNS-01) and the
+// allowlist holds that exact wildcard: "www.example.com" never permits
+// "*.example.com". Both the control plane and the agent check this.
+func SANAllowed(san string, allowed []string, wildcards bool) bool {
+	san = strings.ToLower(strings.TrimSuffix(san, "."))
+	if strings.Contains(san, "*") {
+		if !wildcards || strings.Count(san, "*") != 1 || !strings.HasPrefix(san, "*.") {
+			return false
+		}
+		for _, a := range allowed {
+			if strings.ToLower(strings.TrimSuffix(a, ".")) == san {
+				return true
+			}
+		}
+		return false
+	}
+	for _, a := range allowed {
+		a = strings.ToLower(strings.TrimSuffix(a, "."))
+		if a == san {
+			return true
+		}
+		if rest, ok := strings.CutPrefix(a, "*."); ok {
+			if label, parent, ok := strings.Cut(san, "."); ok && label != "" && label != "*" && parent == rest {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -93,11 +93,11 @@ func issuerCmd() *cobra.Command {
 
 func deploymentCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "deployment", Short: "Deployments: lineage -> agent target -> issuer"}
-	var lineage, agent, target, issuer, endpoint, window, emergency string
+	var lineage, agent, target, issuer, endpoint, window, emergency, challenge string
 	var sans []string
 	create := &cobra.Command{Use: "create", Short: "Create a deployment, or request one if you may only request", RunE: run(func(c *client, _ []string) error {
 		return postAndPrint(c, "POST", "/api/v1/deployments", map[string]any{"lineage": lineage, "agent": agent, "target": target,
-			"issuer": issuer, "endpoint": endpoint, "sans": sans, "maintenance_window": window, "window_emergency": emergency}, func(raw json.RawMessage) {
+			"issuer": issuer, "endpoint": endpoint, "sans": sans, "maintenance_window": window, "window_emergency": emergency, "challenge": challenge}, func(raw json.RawMessage) {
 			var d struct{ ID, Approval string }
 			_ = json.Unmarshal(raw, &d)
 			if d.Approval != "approved" {
@@ -122,6 +122,7 @@ func deploymentCmd() *cobra.Command {
 	emergencyHelp := "when no window is left before the current certificate gets too close to expiry: block (alert and wait) or renew_outside_window"
 	create.Flags().StringVar(&window, "window", "", windowHelp)
 	create.Flags().StringVar(&emergency, "emergency", "", emergencyHelp)
+	create.Flags().StringVar(&challenge, "challenge", "http-01", "how domain control is proven: http-01 (webroot) or dns-01 (the agent's dns_solvers; needed for wildcards)")
 	setWindow := &cobra.Command{Use: "set-window DEPLOYMENT", Short: "Set or clear (--window \"\") the maintenance window (owner)", Args: cobra.ExactArgs(1),
 		RunE: run(func(c *client, args []string) error {
 			return postAndPrint(c, "PUT", "/api/v1/deployments/"+url.PathEscape(args[0])+"/window",

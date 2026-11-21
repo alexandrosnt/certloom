@@ -28,6 +28,10 @@ type Config struct {
 	// CertbotDir is read (never written) for lineage discovery; default /etc/letsencrypt.
 	CertbotDir string         `json:"certbot_dir,omitempty"`
 	Targets    []TargetConfig `json:"targets"`
+	// DNSSolvers create DNS-01 records; credentials stay on this host.
+	DNSSolvers []DNSSolverConfig `json:"dns_solvers,omitempty"`
+	// Resolvers are used for DNS-01 propagation checks and CNAME lookups.
+	Resolvers []string `json:"resolvers,omitempty"`
 }
 
 // TargetConfig is a locally configured deployment target.
@@ -38,7 +42,7 @@ type TargetConfig struct {
 	// /etc/certloom/live/www -> <state_dir>/certs/www/<run>. The server config
 	// references LiveLink/fullchain.pem and LiveLink/privkey.pem.
 	LiveLink      string   `json:"live_link"`
-	Webroot       string   `json:"webroot,omitempty"` // HTTP-01 challenge files are written under .well-known/acme-challenge
+	Webroot       string   `json:"webroot,omitempty"` // HTTP-01 challenge files are written under .well-known/acme-challenge; not needed for DNS-01
 	TestCommand   []string `json:"test_command"`
 	ReloadCommand []string `json:"reload_command"`
 	VerifyAddress string   `json:"verify_address"` // host:port for local TLS verification
@@ -92,6 +96,7 @@ func (c *Config) Validate() error {
 		}
 		seen[t.Name] = true
 	}
+	p = append(p, c.validateDNS()...)
 	if len(p) > 0 {
 		return errors.New("invalid agent config: " + strings.Join(p, "; "))
 	}
@@ -112,27 +117,4 @@ func (c *Config) taskAllowed(t string) bool {
 		return slices.Contains(agentproto.AllTaskTypes, t)
 	}
 	return slices.Contains(c.AllowedTasks, t)
-}
-
-// sanAllowed: exact match or "*.parent" matching exactly one label.
-// A requested wildcard SAN is never allowed: an allowlist pattern means "names
-// under this parent", not "a certificate valid for all of them" (and HTTP-01
-// cannot validate wildcards; no DNS-01 yet).
-func sanAllowed(san string, allowed []string) bool {
-	san = strings.ToLower(strings.TrimSuffix(san, "."))
-	if strings.Contains(san, "*") {
-		return false
-	}
-	for _, a := range allowed {
-		a = strings.ToLower(a)
-		if a == san {
-			return true
-		}
-		if rest, ok := strings.CutPrefix(a, "*."); ok {
-			if label, parent, ok := strings.Cut(san, "."); ok && label != "" && label != "*" && parent == rest {
-				return true
-			}
-		}
-	}
-	return false
 }

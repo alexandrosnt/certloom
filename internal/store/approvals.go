@@ -26,7 +26,10 @@ const (
 // SpecVersion is the version of the DeploymentSpec encoding. Any change to
 // what goes into the spec changes every digest and voids every approval, so
 // it must come with a new version and a plan for existing approvals.
-const SpecVersion = 1
+//
+// Version 2 added the challenge type. HTTP-01 specs are still encoded as
+// version 1 (no challenge field), so approvals made before it stay valid.
+const SpecVersion = 2
 
 // DeploymentSpec is what an approval covers: everything that decides what
 // gets issued, by which CA and where it goes, resolved through references
@@ -41,6 +44,8 @@ type DeploymentSpec struct {
 	Key     SpecKey    `json:"key"`
 	Issuer  SpecIssuer `json:"issuer"`
 	Target  SpecTarget `json:"target"`
+	// Challenge is set only for DNS-01 (version 2).
+	Challenge string `json:"challenge,omitempty"`
 }
 
 // SpecKey describes the key the agent generates.
@@ -82,10 +87,14 @@ func BuildDeploymentSpec(d *Deployment, iss *Issuer, a *Agent) DeploymentSpec {
 			tgt.Type = t.Type
 		}
 	}
-	return DeploymentSpec{V: SpecVersion, Lineage: d.LineageID, SANs: slices.Compact(sans), Purpose: PurposeTLSServer,
+	spec := DeploymentSpec{V: 1, Lineage: d.LineageID, SANs: slices.Compact(sans), Purpose: PurposeTLSServer,
 		Key:    SpecKey{Algorithm: d.KeyAlgorithm},
 		Issuer: SpecIssuer{ID: iss.ID, Kind: iss.Kind, DirectoryURL: iss.DirectoryURL, Profile: iss.Profile},
 		Target: tgt}
+	if d.Challenge == "dns-01" {
+		spec.V, spec.Challenge = SpecVersion, d.Challenge
+	}
+	return spec
 }
 
 // SHA256 is the hex digest of the spec's JSON encoding. Struct fields encode

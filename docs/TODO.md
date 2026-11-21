@@ -5,7 +5,16 @@ Not done yet, roughly in the order I want to tackle it.
 ## Renewal
 - No command to change a deployment's issuer (e.g. staging to production); today it
   means recreating the deployment.
-- DNS-01, EAB, wildcards (M3).
+- EAB (M3).
+- `certloom-dns-lego` plugin: many lego providers keep the record id in memory between
+  present and cleanup, so they need a long-running plugin (HTTP transport) or a
+  per-provider answer.
+- DNS-01: lego resolves the authoritative nameservers' names through the system resolver,
+  not `resolvers`; split-horizon setups may need an option to check through the
+  configured resolvers only.
+- Cloudflare DNS has only mock-API tests; run it once live against a test zone.
+- DNS credentials are host-local only; a central option (vault reference or cloud
+  identity) is planned (ADR-0017).
 - No web UI for approvals and exceptions yet (API and CLI only).
 - `deployment list` shows the stored approval state; a legacy deployment under required
   approvals still shows "approved" until it is next checked.
@@ -27,7 +36,7 @@ Not done yet, roughly in the order I want to tackle it.
 ## Decided
 - Agents never start issuance on their own while the control plane is down.
 - Agent channel is HTTPS + JSON over mTLS rather than gRPC.
-- No wildcard certificates until DNS-01.
+- Wildcard certificates only with DNS-01, listed literally in `allowed_sans`.
 
 ## Open questions
 - Where to publish images and packages.

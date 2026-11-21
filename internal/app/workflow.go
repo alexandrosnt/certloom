@@ -79,6 +79,8 @@ type DeploymentInput struct {
 	Window string
 	// Emergency is "block" (default) or "renew_outside_window".
 	Emergency string
+	// Challenge is "http-01" (default) or "dns-01". Wildcard SANs need dns-01.
+	Challenge string
 }
 
 // CreateDeployment binds a lineage to an agent target and issuer. SANs must
@@ -91,6 +93,13 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 	if err := checkWindow(in.Window, in.Emergency); err != nil {
 		return nil, err
 	}
+	if in.Challenge == "" {
+		in.Challenge = agentproto.ChallengeHTTP01
+	}
+	if in.Challenge != agentproto.ChallengeHTTP01 && in.Challenge != agentproto.ChallengeDNS01 {
+		return nil, invalid("challenge must be http-01 or dns-01")
+	}
+	dns01 := in.Challenge == agentproto.ChallengeDNS01
 	perm := authz.ManageDeployments
 	if !p.Can(perm) {
 		perm = authz.RequestDeployments
@@ -114,9 +123,15 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 		if tgt == nil {
 			return invalid("agent %q does not report a target named %q (check its config and that it has sent a heartbeat)", a.Name, in.Target)
 		}
+		if dns01 && len(a.Capabilities.DNSSolvers) == 0 {
+			return invalid("agent %q reports no dns_solvers; configure one on the host for dns-01", a.Name)
+		}
 		for _, san := range in.SANs {
-			if !SANAllowed(san, tgt.AllowedSANs) {
-				return invalid("SAN %q is not in target %q's allowed_sans", san, in.Target)
+			if strings.HasPrefix(san, "*") && !dns01 {
+				return invalid("wildcard SAN %q needs challenge dns-01", san)
+			}
+			if !SANAllowed(san, tgt.AllowedSANs, dns01) {
+				return invalid("SAN %q is not in target %q's allowed_sans (a wildcard must be listed literally)", san, in.Target)
 			}
 		}
 		iss, err := tx.GetIssuer(ctx, in.Issuer)
@@ -124,7 +139,7 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 			return invalid("issuer %q not found", in.Issuer)
 		}
 		d = &store.Deployment{LineageID: l.ID, AgentID: a.ID, Target: in.Target, IssuerID: iss.ID, SANs: in.SANs,
-			MaintenanceWindow: normWindow(in.Window), WindowEmergency: in.Emergency}
+			MaintenanceWindow: normWindow(in.Window), WindowEmergency: in.Emergency, Challenge: in.Challenge}
 		if in.Endpoint != "" {
 			e, err := tx.GetEndpoint(ctx, in.Endpoint)
 			if err != nil {
@@ -165,31 +180,15 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 		}
 		return s.audit(ctx, tx, p, "deployments.create", "deployment", d.ID, map[string]any{"lineage": l.ID, "agent": a.ID,
 			"target": in.Target, "issuer": iss.ID, "sans": in.SANs, "endpoint": in.Endpoint, "maintenance_window": d.MaintenanceWindow,
-			"window_emergency": d.WindowEmergency, "approval": d.Approval, "approval_request": approvalID})
+			"window_emergency": d.WindowEmergency, "challenge": d.Challenge, "approval": d.Approval, "approval_request": approvalID})
 	})
 	return d, err
 }
 
-// SANAllowed matches a SAN against allowlist patterns ("*.example.com"
-// matches one label, exactly like a wildcard certificate).
-// Requested wildcard SANs are refused (see agent.sanAllowed).
-func SANAllowed(san string, allowed []string) bool {
-	san = strings.ToLower(strings.TrimSuffix(san, "."))
-	if strings.Contains(san, "*") {
-		return false
-	}
-	for _, a := range allowed {
-		a = strings.ToLower(a)
-		if a == san {
-			return true
-		}
-		if rest, ok := strings.CutPrefix(a, "*."); ok {
-			if label, parent, ok := strings.Cut(san, "."); ok && label != "" && label != "*" && parent == rest {
-				return true
-			}
-		}
-	}
-	return false
+// SANAllowed reports whether san may be requested for a target with the
+// given allowlist; see agentproto.SANAllowed.
+func SANAllowed(san string, allowed []string, wildcards bool) bool {
+	return agentproto.SANAllowed(san, allowed, wildcards)
 }
 
 // ListDeployments lists deployments.
@@ -691,7 +690,7 @@ func (s *Service) advance(ctx context.Context, tx *store.Tx, runID string, ext e
 			case "pending", "delivered":
 				return nil
 			case "succeeded":
-				if err := s.sendTask(ctx, tx, r, d, agentproto.TaskVerify, agentproto.VerifyPayload{ExpectedSHA256: *r.IssuedSHA256, SNI: d.SANs[0]},
+				if err := s.sendTask(ctx, tx, r, d, agentproto.TaskVerify, agentproto.VerifyPayload{ExpectedSHA256: *r.IssuedSHA256, SNI: verifySNI(d.SANs)},
 					verifyTaskTTL, store.RunVerifying, "activated on target; verifying"); err != nil {
 					return err
 				}
@@ -791,7 +790,7 @@ func (s *Service) sendIssue(ctx context.Context, tx *store.Tx, r *store.Run, d *
 		return err
 	}
 	p := agentproto.IssuePayload{RunID: r.ID, DirectoryURL: iss.DirectoryURL, Email: iss.Email, AgreeTOS: iss.AgreeTOS, Profile: iss.Profile, SANs: d.SANs,
-		KeyAlgorithm: d.KeyAlgorithm}
+		KeyAlgorithm: d.KeyAlgorithm, Challenge: d.Challenge}
 	if r.PreviousSHA256 != nil {
 		if c, err := tx.GetCertificate(ctx, *r.PreviousSHA256); err == nil {
 			if id, err := ari.CertID(c.X509); err == nil {
@@ -947,4 +946,15 @@ func (s *Service) notifyRun(ctx context.Context, tx *store.Tx, r *store.Run, eve
 		n.Severity = "warning" // deliver success notices to channels at the default threshold
 	}
 	return tx.EnqueueNotification(ctx, n, r.ID+":"+event)
+}
+
+// verifySNI picks the server name for the local verification handshake: the
+// first SAN that is a real host name, or else a name the wildcard covers.
+func verifySNI(sans []string) string {
+	for _, s := range sans {
+		if !strings.HasPrefix(s, "*.") {
+			return s
+		}
+	}
+	return "certloom-verify." + strings.TrimPrefix(sans[0], "*.")
 }

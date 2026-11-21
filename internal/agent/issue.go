@@ -81,12 +81,16 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 	if p.KeyAlgorithm != "" && p.KeyAlgorithm != agentproto.KeyECDSAP256 {
 		return nil, fmt.Errorf("unsupported key algorithm %q", p.KeyAlgorithm)
 	}
+	dns01 := p.Challenge == agentproto.ChallengeDNS01
+	if p.Challenge != "" && p.Challenge != agentproto.ChallengeHTTP01 && !dns01 {
+		return nil, fmt.Errorf("unsupported challenge %q", p.Challenge)
+	}
 	for _, san := range p.SANs {
-		if !sanAllowed(san, tgt.AllowedSANs) { // the control plane is not trusted with this decision
+		if !agentproto.SANAllowed(san, tgt.AllowedSANs, dns01) { // the control plane is not trusted with this decision
 			return nil, fmt.Errorf("SAN %q is not in this host's allowed_sans for target %s", san, tgt.Name)
 		}
 	}
-	if tgt.Webroot == "" {
+	if !dns01 && tgt.Webroot == "" {
 		return nil, fmt.Errorf("target %s has no webroot for HTTP-01", tgt.Name)
 	}
 	if !p.AgreeTOS {
@@ -110,11 +114,7 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 	if err != nil {
 		return nil, err
 	}
-	prov, err := webroot.NewHTTPProvider(tgt.Webroot)
-	if err != nil {
-		return nil, err
-	}
-	if err := client.Challenge.SetHTTP01Provider(prov); err != nil {
+	if err := a.setChallenge(client, tgt, dns01); err != nil {
 		return nil, err
 	}
 	req := certificate.ObtainForCSRRequest{CSR: csr, Bundle: true, Profile: p.Profile, ReplacesCertID: p.ReplacesCertID}
@@ -133,6 +133,23 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 		return nil, err
 	}
 	return agentproto.IssueOutput{ChainPEM: string(res.Certificate)}, nil
+}
+
+// setChallenge registers exactly one solver, so lego cannot fall back to
+// another challenge type than the one that was approved.
+func (a *Agent) setChallenge(client *lego.Client, tgt *TargetConfig, dns01 bool) error {
+	if !dns01 {
+		prov, err := webroot.NewHTTPProvider(tgt.Webroot)
+		if err != nil {
+			return err
+		}
+		return client.Challenge.SetHTTP01Provider(prov)
+	}
+	mux, err := newDNSMux(a.cfg.DNSSolvers, a.log)
+	if err != nil {
+		return err
+	}
+	return client.Challenge.SetDNS01Provider(mux)
 }
 
 // issueFailure extracts what the control plane needs to schedule the next

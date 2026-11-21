@@ -26,3 +26,4 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0014](0014-license-governance.md) | License, governance, release integrity | Accepted |
 | [0015](0015-approvals.md) | Approvals and separation of duties | Accepted |
 | [0016](0016-policy-exceptions.md) | Policy exceptions and acknowledgement | Accepted |
+| [0017](0017-dns01.md) | DNS-01 challenges and wildcard certificates | Accepted |

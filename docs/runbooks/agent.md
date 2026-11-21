@@ -32,15 +32,64 @@ targets:
   - name: www
     type: nginx
     live_link: /etc/certloom/live/www       # symlink managed by the agent
-    webroot: /var/www/acme             # HTTP-01 challenge files are written here
+    webroot: /var/www/acme             # HTTP-01 challenge files are written here (not needed for DNS-01)
     test_command: [nginx, -t]
     reload_command: [systemctl, reload, nginx]
     verify_address: 127.0.0.1:443
-    allowed_sans: [www.example.com, "*.example.com"]   # "*.x" = any ONE label under x; wildcard certificates are refused
+    allowed_sans: [www.example.com, "*.example.com"]   # "*.x" = any ONE label under x; a wildcard certificate also needs DNS-01 (2a)
 # allowed_tasks: [inventory.scan, verify.local]       # optional: restrict to monitor-only
 ```
 
 Check it with `certloom-agent check-config --config /etc/certloom-agent/config.yaml`.
+
+## 2a. DNS-01 (wildcards, hosts without port 80)
+
+With DNS-01 the agent proves control of a name by publishing a TXT record instead of
+serving a file, so the host needs no inbound port 80, and wildcard certificates become
+possible. DNS credentials stay on the agent host; the control plane never sees them.
+
+```yaml
+resolvers: ["10.0.0.53:53"]          # optional; used for CNAME lookups and propagation checks
+dns_solvers:
+  - name: internal                   # RFC 2136 dynamic update with TSIG (BIND, Knot, PowerDNS)
+    provider: rfc2136
+    nameserver: 10.0.0.53:53
+    tsig_file: /etc/certloom-agent/dns/internal.key   # tsig-keygen output, hmac-sha256 or stronger
+    zones: [corp.example.com]
+  - name: public
+    provider: cloudflare
+    token_file: /etc/certloom-agent/dns/cloudflare.token   # API token with Zone:DNS:Edit on these zones only
+    zones: [example.com]
+  - name: other                      # anything else: a plugin (see docs/dns-plugins.md)
+    plugin: /usr/libexec/certloom/dns/certloom-dns-example
+    sha256: <sha256sum of the plugin>
+    zones: [example.net]
+    config: {endpoint: "https://dns-api.internal"}   # non-secret settings only
+    env: [EXAMPLE_DNS_TOKEN]                           # agent variables passed through
+```
+
+- The record for `www.example.com` is `_acme-challenge.www.example.com`. If that name is a
+  CNAME (for example to a dedicated validation zone), the agent follows it and picks the
+  solver whose zone is the longest match for the target.
+- Keep credential files `0600`, owned by the agent's user.
+- For a wildcard, list it literally in the target's `allowed_sans` (`"*.example.com"`).
+  The entry also allows single names one label below, as before.
+
+Check a solver before relying on it. This writes and removes a random TXT record:
+
+```sh
+certloom-agent dns-test --config /etc/certloom-agent/config.yaml --solver public --name www.example.com
+```
+
+Then create the deployment with `--challenge dns-01`:
+
+```sh
+certloom deployment create --lineage www --agent web-01 --target www --issuer letsencrypt \
+  --challenge dns-01 --san '*.example.com' --san example.com
+```
+
+The challenge type is part of the approved spec, so switching an existing deployment to
+DNS-01 needs a new approval.
 
 ## 3. Point Nginx at the live link
 

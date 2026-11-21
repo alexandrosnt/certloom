@@ -951,13 +951,14 @@ func (s *Server) createDeployment(w http.ResponseWriter, r *http.Request) error 
 		SANs      []string `json:"sans"`
 		Window    string   `json:"maintenance_window,omitempty"`
 		Emergency string   `json:"window_emergency,omitempty"`
+		Challenge string   `json:"challenge,omitempty"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
 	}
 	d, err := s.Svc.CreateDeployment(r.Context(), PrincipalFrom(r.Context()), app.DeploymentInput{Lineage: req.Lineage, Agent: req.Agent,
 		Target: req.Target, Issuer: req.Issuer, Endpoint: req.Endpoint, SANs: req.SANs,
-		Window: req.Window, Emergency: req.Emergency})
+		Window: req.Window, Emergency: req.Emergency, Challenge: req.Challenge})
 	if err != nil {
 		return err
 	}

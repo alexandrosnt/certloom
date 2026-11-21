@@ -625,6 +625,7 @@ paths:
                 sans: { type: array, items: { type: string } }
                 maintenance_window: { type: string, description: "Weekly window for activation, e.g. \"Mon-Fri 02:00-05:00 Europe/Athens\"" }
                 window_emergency: { type: string, enum: [block, renew_outside_window], description: What to do when no window is left before the safety deadline }
+                challenge: { type: string, enum: [http-01, dns-01], default: http-01, description: How domain control is proven. dns-01 uses the agent's dns_solvers and is required for wildcard SANs. Part of the approved spec. }
       responses:
         "201": { $ref: "#/components/responses/Object" }
         "400": { $ref: "#/components/responses/Problem" }

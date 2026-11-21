@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Added
+- DNS-01 challenges and wildcard certificates (ADR-0017). Agents get `dns_solvers` with
+  built-in `rfc2136` (TSIG) and `cloudflare` providers, plus executable plugins for any
+  other DNS service (protocol in `docs/dns-plugins.md`, Go SDK in package `dnsplugin`).
+  DNS credentials stay on the agent host. The agent follows `_acme-challenge` CNAMEs to a
+  delegated validation zone and picks the solver with the longest matching zone.
+  `certloom deployment create --challenge dns-01`; the challenge type is part of the
+  approved spec, and existing HTTP-01 approvals stay valid. A wildcard must be listed
+  literally in the target's `allowed_sans`.
+- `certloom-agent dns-test --solver NAME --name DOMAIN` writes, resolves and removes a
+  test record to check a solver's credentials and permissions.
 - Policy exceptions (ADR-0016): time-bound, approved acceptance of one condition (check,
   check version and fingerprint) on one subject at its current severity, with risk owner,
   rationale, compensating controls, optional remediation plan and the finding as

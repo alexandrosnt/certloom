@@ -126,7 +126,7 @@ func TestSANAllowlist(t *testing.T) {
 		san  string
 		want bool
 	}{{"www.example.com", true}, {"a.example.com", true}, {"a.b.example.com", false}, {"example.com", false}, {"*.example.com", false}, {"evil.com", false}} {
-		if got := sanAllowed(c.san, []string{"www.example.com", "*.example.com"}); got != c.want {
+		if got := agentproto.SANAllowed(c.san, []string{"www.example.com", "*.example.com"}, false); got != c.want {
 			t.Errorf("%s: got %v", c.san, got)
 		}
 	}

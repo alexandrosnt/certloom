@@ -65,6 +65,12 @@ func newEnv(t *testing.T) *env {
 // renewal replaces.
 func newEnvOld(t *testing.T, oldOpts testpki.Options) *env {
 	t.Helper()
+	return newEnvWith(t, oldOpts, nil)
+}
+
+// newEnvWith lets a test adjust the agent config before enrollment.
+func newEnvWith(t *testing.T, oldOpts testpki.Options, mod func(*agent.Config)) *env {
+	t.Helper()
 	db := storetest.New(t)
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
@@ -100,6 +106,9 @@ func newEnvOld(t *testing.T, oldOpts testpki.Options) *env {
 		Name: "www", Type: "nginx", LiveLink: filepath.Join(dir, "live", "www"), Webroot: filepath.Join(dir, "webroot"),
 		TestCommand: []string{"true"}, ReloadCommand: []string{"true"}, VerifyAddress: "127.0.0.1:1",
 		AllowedSANs: []string{"www.wf.test", "*.wf.test"}}}}
+	if mod != nil {
+		mod(cfg)
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +383,7 @@ func TestDeploymentSANsMustBeAllowedByAgent(t *testing.T) {
 	if !errors.Is(err, app.ErrInvalid) || !strings.Contains(err.Error(), "allowed_sans") {
 		t.Fatalf("want allowed_sans rejection, got %v", err)
 	}
-	if app.SANAllowed("a.b.wf.test", []string{"*.wf.test"}) || !app.SANAllowed("a.wf.test", []string{"*.wf.test"}) {
+	if app.SANAllowed("a.b.wf.test", []string{"*.wf.test"}, false) || !app.SANAllowed("a.wf.test", []string{"*.wf.test"}, false) {
 		t.Fatal("wildcard allowlist must match exactly one label")
 	}
 }

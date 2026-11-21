@@ -155,6 +155,7 @@ func Enroll(ctx context.Context, cfg *Config, token, caHash, hostname string) (s
 // New loads an enrolled agent.
 func New(cfg *Config, log *slog.Logger) (*Agent, error) {
 	a := &Agent{cfg: cfg, log: log}
+	setDNSResolvers(cfg.Resolvers)
 	b, err := os.ReadFile(a.path("agent.json"))
 	if err != nil {
 		return nil, fmt.Errorf("not enrolled (run `certloom-agent enroll`): %w", err)
@@ -261,6 +262,7 @@ func (a *Agent) Heartbeat(ctx context.Context) error {
 			hb.Tasks = append(hb.Tasks, t)
 		}
 	}
+	hb.DNSSolvers = a.cfg.dnsSolverInfo()
 	return a.do(ctx, http.MethodPost, agentproto.PathHeartbeat, hb, nil)
 }
 

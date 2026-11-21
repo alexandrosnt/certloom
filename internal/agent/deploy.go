@@ -112,7 +112,7 @@ func (a *Agent) handleDeploy(ctx context.Context, t *agentproto.Task) (any, erro
 		return nil, err
 	}
 	for _, san := range leaf.DNSNames {
-		if !sanAllowed(san, tgt.AllowedSANs) {
+		if !agentproto.SANAllowed(san, tgt.AllowedSANs, true) { // wildcards only come from a DNS-01 issue step
 			return nil, fmt.Errorf("certificate SAN %q not allowed for target %s", san, tgt.Name)
 		}
 	}

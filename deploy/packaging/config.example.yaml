@@ -23,3 +23,16 @@ targets:
     verify_address: 127.0.0.1:443
     allowed_sans: [www.example.com]
 # allowed_tasks: [inventory.scan, verify.local]   # optional: monitor only
+# DNS-01 (wildcards, hosts without port 80). Credentials stay on this host.
+# Test a solver with `certloom-agent dns-test --solver NAME --name DOMAIN`.
+# resolvers: ["10.0.0.53:53"]
+# dns_solvers:
+#   - name: internal
+#     provider: rfc2136
+#     nameserver: 10.0.0.53:53
+#     tsig_file: /etc/certloom-agent/dns/internal.key
+#     zones: [corp.example.com]
+#   - name: public
+#     provider: cloudflare
+#     token_file: /etc/certloom-agent/dns/cloudflare.token
+#     zones: [example.com]

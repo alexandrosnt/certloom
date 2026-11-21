@@ -213,6 +213,18 @@ func (s *stack) logs() {
 // up starts the stack. By default the web container is nginx:alpine with the
 // agent binary mounted at /certloom; pass a webStarter to replace it.
 func up(t *testing.T, web ...webStarter) *stack {
+	return upWith(t, upOptions{}, web...)
+}
+
+// upOptions changes the default stack.
+type upOptions struct {
+	agentConfig string   // replaces agentConfig
+	pebbleArgs  []string // extra Pebble flags
+	// before starts extra containers before Pebble; m2 is the shared directory.
+	before func(run func(name string, args ...string) string, m2 string)
+}
+
+func upWith(t *testing.T, o upOptions, web ...webStarter) *stack {
 	for _, img := range []string{pgImage, pebbleImage, nginxImage, runImage} {
 		if _, err := tryDocker("image", "inspect", img); err != nil {
 			if out, err := tryDocker("pull", img); err != nil {
@@ -247,7 +259,10 @@ func up(t *testing.T, web ...webStarter) *stack {
 	write := func(name, data string) { _ = os.WriteFile(filepath.Join(m2, name), []byte(data), 0o644) }
 	write("pebble.json", pebbleConfig)
 	write("nginx.conf", nginxConf)
-	write("agent.yaml", agentConfig)
+	if o.agentConfig == "" {
+		o.agentConfig = agentConfig
+	}
+	write("agent.yaml", o.agentConfig)
 	cid := docker(t, "", "create", pebbleImage)
 	docker(t, "", "cp", cid+":/test/certs/pebble.minica.pem", filepath.Join(m2, "pebble.minica.pem"))
 	docker(t, "", "rm", cid)
@@ -275,7 +290,10 @@ func up(t *testing.T, web ...webStarter) *stack {
 	appPass := rnd(12)
 	docker(t, "", "exec", pg, "psql", "-U", "certloom_owner", "-d", "certloom", "-c", "ALTER ROLE certloom_app LOGIN PASSWORD '"+appPass+"'")
 
-	run("pebble", "-v", mount(m2, "/m2"), "-e", "PEBBLE_VA_NOSLEEP=1", pebbleImage, "-config", "/m2/pebble.json")
+	if o.before != nil {
+		o.before(run, m2)
+	}
+	run("pebble", append([]string{"-v", mount(m2, "/m2"), "-e", "PEBBLE_VA_NOSLEEP=1", pebbleImage, "-config", "/m2/pebble.json"}, o.pebbleArgs...)...)
 
 	kek := base64.StdEncoding.EncodeToString([]byte(rnd(16)))
 	s.certloomd = run("certloomd", "-p", "127.0.0.1::8443", "-v", mount(linuxBin, "/certloom"), "-v", mount(m2, "/m2"),

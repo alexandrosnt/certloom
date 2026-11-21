@@ -25,7 +25,12 @@ Usage:
   certloom-agent enroll --ca-hash sha256:... [--config FILE] [--token-stdin]
   certloom-agent run [--config FILE]
   certloom-agent check-config [--config FILE]
+  certloom-agent dns-test --solver NAME --name DOMAIN [--config FILE]
   certloom-agent version
+
+dns-test writes and removes a random TXT record for _acme-challenge.DOMAIN
+through one of the config's dns_solvers and checks that it resolves. Use it to
+verify credentials and permissions, and as the conformance test for plugins.
 
 The enrollment token is read from stdin (never from argv).
 Default config: /etc/certloom-agent/config.yaml
@@ -44,6 +49,8 @@ func main() {
 	caHash := fs.String("ca-hash", "", "control plane CA fingerprint printed by `certloom agent token`")
 	server := fs.String("server", "", "override the config's server URL")
 	_ = fs.Bool("token-stdin", true, "read the token from stdin (always on)")
+	solver := fs.String("solver", "", "dns-test: name of the dns solver to check")
+	name := fs.String("name", "", "dns-test: domain to prove control of, e.g. www.example.com")
 	_ = fs.Parse(os.Args[2:])
 
 	var err error
@@ -56,6 +63,16 @@ func main() {
 		if err == nil {
 			fmt.Println("config OK")
 		}
+	case "dns-test":
+		var cfg *agent.Config
+		if cfg, err = agent.LoadConfig(*cfgPath); err != nil {
+			break
+		}
+		if *solver == "" || *name == "" {
+			err = errors.New("--solver and --name are required")
+			break
+		}
+		err = agent.CheckDNSSolver(ctx, cfg, *solver, *name, os.Stdout, log)
 	case "enroll":
 		err = enroll(ctx, *cfgPath, *caHash, *server)
 	case "run":
