@@ -227,7 +227,7 @@ func (s *Service) importInventory(ctx context.Context, tx *store.Tx, id AgentIde
 	n += observed
 	return s.systemAudit(ctx, tx, "agent:"+id.AgentID, "agents.inventory", "agent", id.AgentID, map[string]any{
 		"files": len(inv.Certificates), "new_certificates": n, "certbot_lineages": len(inv.Certbot),
-		"iis_bindings": len(inv.IIS), "win_acme_renewals": len(inv.WinACME), "kubernetes": inv.Kubernetes != nil})
+		"iis_bindings": len(inv.IIS), "win_acme_renewals": len(inv.WinACME), "kubernetes": inv.Kubernetes != nil, "cloud_objects": cloudCount(inv.Cloud)})
 }
 
 // ListAgents lists agents with derived health.

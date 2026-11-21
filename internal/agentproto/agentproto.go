@@ -300,6 +300,82 @@ type InventoryOutput struct {
 	IIS        []IISBinding     `json:"iis,omitempty"`
 	WinACME    []WinACMERenewal `json:"win_acme,omitempty"`
 	Kubernetes *KubeInventory   `json:"kubernetes,omitempty"`
+	Cloud      *CloudInventory  `json:"cloud,omitempty"`
+}
+
+// Cloud certificate services an agent can observe (ADR-0024). The value is
+// also the inventory source of the certificates found there.
+const (
+	CloudAWSACM           = "aws_acm"
+	CloudAWSPCA           = "aws_pca"
+	CloudAzureKeyVault    = "azure_keyvault"
+	CloudGCPCertManager   = "gcp_certmanager"
+	CloudGCPCAS           = "gcp_cas"
+	CloudCloudflareEdge   = "cloudflare_edge"
+	CloudCloudflareOrigin = "cloudflare_origin_ca"
+)
+
+// CloudInventory is what an agent read from cloud certificate services.
+// Scopes it could not list are named in Errors, so findings of objects in
+// them are kept rather than resolved.
+type CloudInventory struct {
+	Objects []CloudObject     `json:"objects"`
+	Errors  []CloudScopeError `json:"errors,omitempty"`
+}
+
+// CloudScopeError is one provider scope (account and region, vault,
+// project and location, zone) that could not be read.
+type CloudScopeError struct {
+	Provider string `json:"provider"`
+	Scope    string `json:"scope"`
+	Error    string `json:"error"`
+}
+
+// CloudObject is a certificate or CA held by a cloud service. Only public
+// data is carried. ChainPEM is empty when the service does not return the
+// certificate (for example a pack that is not issued yet).
+type CloudObject struct {
+	Provider string   `json:"provider"`
+	Scope    string   `json:"scope"`
+	ID       string   `json:"id"` // ARN, vault/name, resource name, zone/id
+	Name     string   `json:"name,omitempty"`
+	CA       bool     `json:"ca,omitempty"`
+	DNSNames []string `json:"dns_names,omitempty"`
+	NotAfter string   `json:"not_after,omitempty"` // RFC 3339
+	ChainPEM string   `json:"chain_pem,omitempty"`
+	// Status is the service's own state word (ISSUED, ACTIVE, active, ...),
+	// shown as is.
+	Status string `json:"status,omitempty"`
+	// Managed is true when the service renews the certificate by itself
+	// (ACM-issued and renewal eligible, Key Vault AutoRenew, Google managed,
+	// Cloudflare packs).
+	Managed bool `json:"managed"`
+	// Renewal is the service's issuance or renewal progress, normalised to
+	// RenewalPending or RenewalFailed (empty when nothing is in progress),
+	// with the service's reason and since when.
+	Renewal       string   `json:"renewal,omitempty"`
+	RenewalReason string   `json:"renewal_reason,omitempty"`
+	RenewalSince  string   `json:"renewal_since,omitempty"`
+	InUseBy       []string `json:"in_use_by,omitempty"`
+	// NotPubliclyTrusted marks Cloudflare Origin CA certificates.
+	NotPubliclyTrusted bool `json:"not_publicly_trusted,omitempty"`
+	// Versions lists Key Vault certificate versions, newest first.
+	Versions []CloudVersion `json:"versions,omitempty"`
+}
+
+// CloudObject.Renewal values.
+const (
+	RenewalPending = "pending"
+	RenewalFailed  = "failed"
+)
+
+// CloudVersion is one version of a versioned cloud certificate.
+type CloudVersion struct {
+	ID       string `json:"id"`
+	Created  string `json:"created"`
+	Enabled  bool   `json:"enabled"`
+	SHA256   string `json:"sha256,omitempty"` // of the leaf certificate
+	NotAfter string `json:"not_after,omitempty"`
 }
 
 // IISBinding is one https binding of an IIS site with the certificate

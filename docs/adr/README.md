@@ -33,3 +33,4 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0021](0021-event-webhooks.md) | Event webhooks | Accepted |
 | [0022](0022-windows-iis.md) | Windows agent, IIS / HTTP.sys bindings, win-acme discovery | Accepted |
 | [0023](0023-kubernetes-observation.md) | Kubernetes observation of cert-manager and trust-manager | Accepted |
+| [0024](0024-cloud-observation.md) | Read-only cloud certificate observation | Accepted |

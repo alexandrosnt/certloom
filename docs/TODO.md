@@ -36,6 +36,18 @@ Not done yet, roughly in the order I want to tackle it.
 - An agent result whose import fails is retried by the agent forever without a visible
   error on the control plane; surface it.
 
+## Cloud
+- AWS, Azure, Google and Cloudflare observation is tested against fakes only. Run each
+  once live with read-only credentials and record it in the integration matrix: in
+  particular that Key Vault Reader can read certificates and pending operations, and
+  which Cloudflare token permission the Origin CA list needs.
+- Policy exceptions cannot target `cloud_object` or `k8s_object` findings yet (the
+  schema allows it; the API accepts certificate, endpoint and lineage only).
+- Central cloud credentials sealed to agents (ADR-0018 path) and Event Grid /
+  EventBridge push are not built; polling only.
+- Classic Compute Engine SSL certificates and load balancer attachments in Google are
+  not listed.
+
 ## Control plane
 - systemd unit and a non-Docker install guide for `certloomd`. With a distro PostgreSQL
   the owner role needs `CREATEROLE` (PG 16+), because the first migration creates

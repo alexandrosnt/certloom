@@ -44,6 +44,8 @@ type Config struct {
 	// Kubernetes switches the agent to in-cluster observation (ADR-0023):
 	// it then only runs inventory tasks and has no targets.
 	Kubernetes *KubeConfig `json:"kubernetes,omitempty"`
+	// Cloud observes cloud certificate services read-only (ADR-0024).
+	Cloud *CloudConfig `json:"cloud,omitempty"`
 	// WinACMEDir is read (never written) for win-acme discovery on Windows;
 	// default %ProgramData%win-acme.
 	WinACMEDir string `json:"win_acme_dir,omitempty"`
@@ -107,6 +109,9 @@ func (c *Config) Validate() error {
 	if c.Kubernetes != nil {
 		p = append(p, c.validateKube()...)
 	}
+	if c.Cloud != nil {
+		p = append(p, c.validateCloud()...)
+	}
 	seen := map[string]bool{}
 	for _, t := range c.Targets {
 		switch {
@@ -149,6 +154,9 @@ func (c *Config) target(name string) (*TargetConfig, bool) {
 func (c *Config) taskAllowed(t string) bool {
 	if c.Kubernetes != nil && t != agentproto.TaskInventoryScan {
 		return false // observation only; never stand in for cert-manager
+	}
+	if c.Cloud != nil && len(c.Targets) == 0 && t != agentproto.TaskInventoryScan {
+		return false // a cloud observer has nothing to deploy to
 	}
 	if len(c.AllowedTasks) == 0 {
 		return slices.Contains(agentproto.AllTaskTypes, t)
@@ -196,16 +204,30 @@ func (c *Config) localEAB(directoryURL string) *EABConfig {
 // inventory: in-cluster observation polls, and IIS hosts report bindings so
 // drift is noticed between renewals.
 func (c *Config) inventoryInterval() int {
+	n := 0
+	shortest := func(s int) {
+		if n == 0 || s < n {
+			n = s
+		}
+	}
 	if c.Kubernetes != nil {
 		if c.Kubernetes.IntervalSeconds > 0 {
-			return c.Kubernetes.IntervalSeconds
+			shortest(c.Kubernetes.IntervalSeconds)
+		} else {
+			shortest(300)
 		}
-		return 300
+	}
+	if c.Cloud != nil {
+		if c.Cloud.IntervalSeconds > 0 {
+			shortest(c.Cloud.IntervalSeconds)
+		} else {
+			shortest(cloudDefaultInterval)
+		}
 	}
 	for _, t := range c.Targets {
 		if t.Type == agentproto.TargetIIS {
-			return 900
+			shortest(900)
 		}
 	}
-	return 0
+	return n
 }

@@ -36,3 +36,13 @@ targets:
 #     provider: cloudflare
 #     token_file: /etc/certloom-agent/dns/cloudflare.token
 #     zones: [example.com]
+
+# Read-only observation of cloud certificate services (ADR-0024); see
+# docs/runbooks/cloud.md for every option and the permissions to grant.
+# cloud:
+#   aws:
+#     - name: prod
+#       regions: [us-east-1]
+#   azure:
+#     - name: corp
+#       vaults: [https://corp-tls.vault.azure.net]

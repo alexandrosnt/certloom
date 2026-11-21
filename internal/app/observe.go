@@ -22,13 +22,14 @@ type storedInventory struct {
 	IIS        []agentproto.IISBinding     `json:"iis,omitempty"`
 	WinACME    []agentproto.WinACMERenewal `json:"win_acme,omitempty"`
 	Kubernetes *agentproto.KubeInventory   `json:"kubernetes,omitempty"`
+	Cloud      *agentproto.CloudInventory  `json:"cloud,omitempty"`
 }
 
 // importObservations stores an agent's IIS, win-acme and Kubernetes
 // observations, imports the certificates they carry and syncs drift and
 // Kubernetes findings. It returns the number of new certificates.
 func (s *Service) importObservations(ctx context.Context, tx *store.Tx, agentID string, inv agentproto.InventoryOutput) (int, error) {
-	if len(inv.IIS) == 0 && len(inv.WinACME) == 0 && inv.Kubernetes == nil && len(inv.Certbot) == 0 {
+	if len(inv.IIS) == 0 && len(inv.WinACME) == 0 && inv.Kubernetes == nil && inv.Cloud == nil && len(inv.Certbot) == 0 {
 		return 0, nil
 	}
 	now := s.now()
@@ -65,7 +66,14 @@ func (s *Service) importObservations(ctx context.Context, tx *store.Tx, agentID 
 			}
 		}
 	}
-	stored := storedInventory{Certbot: inv.Certbot, IIS: inv.IIS, WinACME: inv.WinACME, Kubernetes: inv.Kubernetes}
+	if inv.Cloud != nil {
+		for _, o := range inv.Cloud.Objects {
+			if err := importPEM(o.ChainPEM, o.Provider); err != nil {
+				return n, err
+			}
+		}
+	}
+	stored := storedInventory{Certbot: inv.Certbot, IIS: inv.IIS, WinACME: inv.WinACME, Kubernetes: inv.Kubernetes, Cloud: inv.Cloud}
 	if stored.Kubernetes != nil {
 		k := *stored.Kubernetes
 		k.Certificates = slices.Clone(k.Certificates)
@@ -73,6 +81,14 @@ func (s *Service) importObservations(ctx context.Context, tx *store.Tx, agentID 
 			k.Certificates[i].ChainPEM = ""
 		}
 		stored.Kubernetes = &k
+	}
+	if stored.Cloud != nil {
+		c := *stored.Cloud
+		c.Objects = slices.Clone(c.Objects)
+		for i := range c.Objects {
+			c.Objects[i].ChainPEM = ""
+		}
+		stored.Cloud = &c
 	}
 	if err := tx.SaveAgentInventory(ctx, agentID, stored, now); err != nil {
 		return n, err
@@ -84,6 +100,11 @@ func (s *Service) importObservations(ctx context.Context, tx *store.Tx, agentID 
 	}
 	if inv.Kubernetes != nil {
 		if err := s.syncKube(ctx, tx, agentID, inv.Kubernetes, now); err != nil {
+			return n, err
+		}
+	}
+	if inv.Cloud != nil {
+		if err := s.syncCloud(ctx, tx, agentID, inv.Cloud, now); err != nil {
 			return n, err
 		}
 	}

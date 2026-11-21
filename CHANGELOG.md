@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- Read-only cloud observation (ADR-0024): a `cloud:` block in the agent config lists
+  certificates in AWS Certificate Manager and AWS Private CA, Azure Key Vault, Google
+  Certificate Manager and CA Service, and Cloudflare (edge certificate packs, Origin CA).
+  Credentials come from the cloud's own identity (instance role, managed identity,
+  workload identity) or a file on the agent host. Returned certificates are imported;
+  findings `cloud_renewal_failing`, `cloud_renewal_manual` and
+  `cloud_version_not_adopted` (a new Key Vault version that probed endpoints have not
+  picked up). See `docs/runbooks/cloud.md`.
 - Windows agent for IIS (ADR-0022): target type `iis` (site + bindings). Keys are
   created non-exportable in the machine key store and sign the CSR inside CNG; the
   certificate goes to `WebHosting` and the configured HTTP.sys bindings are switched

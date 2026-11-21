@@ -52,6 +52,9 @@ type Agent struct {
 	// win is the Windows key store, certificate store and HTTP.sys access
 	// used by iis targets; nil on other systems.
 	win winHost
+	// cloudTest replaces HTTP clients, credentials and endpoints of cloud
+	// provider calls in tests.
+	cloudTest *cloudHooks
 
 	// Handlers can be replaced in tests.
 	handlers map[string]func(context.Context, *agentproto.Task) (any, error)

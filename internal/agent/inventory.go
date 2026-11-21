@@ -83,6 +83,9 @@ func (a *Agent) handleInventory(ctx context.Context, _ *agentproto.Task) (any, e
 		}
 		out.Kubernetes = k
 	}
+	if a.cfg.Cloud != nil {
+		out.Cloud = a.inventoryCloud(ctx)
+	}
 	return out, nil
 }
 

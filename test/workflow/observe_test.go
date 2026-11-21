@@ -21,7 +21,7 @@ type openFinding struct {
 func findings(t *testing.T, e *env) []openFinding {
 	t.Helper()
 	rows, err := e.db.Owner.Query(ctx, `SELECT subject_type, subject_id, check_id, severity, resolved_at IS NOT NULL
-		FROM findings WHERE subject_type IN ('deployment','k8s_object') ORDER BY subject_id, check_id`)
+		FROM findings WHERE subject_type IN ('deployment','k8s_object','cloud_object') ORDER BY subject_id, check_id`)
 	if err != nil {
 		t.Fatal(err)
 	}
