@@ -330,6 +330,9 @@ func (s *Service) UpdateIssuer(ctx context.Context, p authz.Principal, ref strin
 				return err
 			}
 			i.CABundle = *in.CABundle
+			if err := storeBundle(ctx, tx, i.CABundle); err != nil {
+				return err
+			}
 		}
 		if err := tx.UpdateIssuer(ctx, i); err != nil {
 			return err

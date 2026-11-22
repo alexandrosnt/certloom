@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"crypto/x509"
 	"database/sql"
 	"embed"
 	"errors"
@@ -77,6 +78,9 @@ func migrationsFS() fs.FS {
 type Tx struct {
 	pgx.Tx
 	OrgID string
+
+	// caCandidates caches CA certificates by subject while linking issuers.
+	caCandidates map[string][]*x509.Certificate
 }
 
 // WithOrg runs fn in a transaction with app.org_id set, so RLS restricts every

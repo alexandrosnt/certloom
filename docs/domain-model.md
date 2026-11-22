@@ -69,6 +69,9 @@ The level can move down (for example, when a target drifts -> `provisioned`). Ev
 | `lineage_mismatch` | critical: the endpoint serves a certificate that is not its expected lineage's `current_cert` |
 | `probe_failed` | warning after N consecutive failures |
 | `unowned` | info: a lineage has no team |
+| `ca_expiring` | on an authority in use: warning < 180 d, critical < 30 d (policy `caExpiry`); info for publicly trusted CAs (ADR-0029) |
+| `chain_outlived` | warning when a certificate stays valid after its CA chain ends; critical within 30 d of the chain's end |
+| `chain_cert_expiring` | on an endpoint: a served intermediate expires before the leaf, warning < 30 d, critical < 7 d |
 
 ## State machines
 

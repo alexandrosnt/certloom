@@ -24,6 +24,14 @@ Not done yet, roughly in the order I want to tackle it.
 - Revocation through Vault and step-ca (none of the issuers revokes yet).
 - Terraform provider and Ansible modules: issuer kind, settings and credential.
 
+## CA inventory
+- Count agent and cloud inventory objects (IIS bindings, Kubernetes, cloud certificates)
+  as "in use" for `ca_expiring`; today only lineages and probed endpoints do.
+- Go client, Terraform data source and Ansible info module for authorities.
+- A CA in the OS trust store of the certloomd host counts as publicly trusted, which
+  lowers `ca_expiring` to info. A separate list of private anchors would fix that; it
+  belongs with trust-bundle distribution (next M7 item).
+
 ## Renewal
 - No command to change a deployment's issuer (e.g. staging to production); today it
   means recreating the deployment.
@@ -95,3 +103,6 @@ Not done yet, roughly in the order I want to tackle it.
 ## Scale notes (local, 2026-11-20)
 10k certs + 2k endpoints on one box: sweep 6s, overview 18ms, probing ~550/s against
 a local TLS server (real networks will be slower). `CERTLOOM_SCALE=1 go test ./test/scale/`.
+CA inventory (2026-11-22, same box): inserting 10k certificates 4.8s -> 5.4s (issuer
+link per new certificate, candidates cached per transaction), sweep 7.2s -> 7.3s, first
+probe of 2k new leaves ~1s slower (one issuer lookup each).

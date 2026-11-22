@@ -83,6 +83,9 @@ func (s *Service) CreateIssuer(ctx context.Context, p authz.Principal, i *store.
 		if err := tx.CreateIssuer(ctx, i, p.Actor); err != nil {
 			return err
 		}
+		if err := storeBundle(ctx, tx, i.CABundle); err != nil {
+			return err
+		}
 		return s.audit(ctx, tx, p, "issuers.create", "issuer", i.ID, map[string]any{"name": i.Name, "kind": i.Kind, "directory_url": i.DirectoryURL,
 			"agree_tos": i.AgreeTOS, "profile": i.Profile, "settings": i.Settings, "credential": !cred.IsEmpty()})
 	})

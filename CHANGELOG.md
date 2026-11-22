@@ -7,6 +7,15 @@
   `os/exec` used instead of the limited `Write`.
 
 ### Added
+- Root and intermediate CA inventory (ADR-0029). Every stored certificate is linked to the
+  CA that signed it (subject plus key, so cross-signed copies count as one CA), including
+  certificates stored earlier. New findings: `ca_expiring` on CAs in use (policy
+  `caExpiry`, default 180d/30d; info for publicly trusted CAs), `chain_outlived` when a
+  certificate outlives its chain, and `chain_cert_expiring` when an endpoint serves an
+  intermediate that expires soon. `certloom ca list|show|impact|plan|renew-affected`,
+  `/api/v1/authorities*` and a CAs page in the UI. `renew-affected` starts normal
+  renewal runs for the deployments under a CA. Issuer CA bundles are added to the
+  inventory.
 - Vault PKI and step-ca issuers (ADR-0028): `certloom issuer create --kind vault|stepca`.
   The agent makes the key and a CSR (new task `csr.create`); certloomd checks the CSR
   against the approved deployment and has it signed through Vault `sign/<role>` (AppRole,

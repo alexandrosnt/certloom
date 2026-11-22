@@ -129,17 +129,30 @@ func (tx *Tx) UpsertCertificate(ctx context.Context, c *certparse.Certificate, s
 	if err != nil {
 		return false, err
 	}
+	var caKey *string
+	if c.X509 != nil {
+		caKey = caKeyOf(c.X509)
+	}
 	tag, err := tx.Exec(ctx, `INSERT INTO certificates
 		(org_id, sha256, der, serial, subject, issuer, common_name, ski, aki, dns_names, ip_addresses,
-		 not_before, not_after, key_algorithm, key_bits, is_ca, self_signed, metadata, source)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		 not_before, not_after, key_algorithm, key_bits, is_ca, self_signed, metadata, source, ca_key, issuer_link_pending)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		ON CONFLICT (org_id, sha256) DO NOTHING`,
 		tx.OrgID, c.SHA256, c.DER, c.Serial, c.Subject, c.Issuer, c.CommonName, c.SubjectKeyID, c.AuthorityKeyID,
-		nonNilS(c.DNSNames), nonNilS(c.IPAddresses), c.NotBefore, c.NotAfter, c.KeyAlgorithm, c.KeyBits, c.IsCA, c.SelfSigned, meta, source)
+		nonNilS(c.DNSNames), nonNilS(c.IPAddresses), c.NotBefore, c.NotAfter, c.KeyAlgorithm, c.KeyBits, c.IsCA, c.SelfSigned, meta, source,
+		caKey, c.X509 == nil)
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() == 1, nil
+	if tag.RowsAffected() != 1 {
+		return false, nil
+	}
+	if c.X509 != nil {
+		if err := tx.linkInserted(ctx, c.SHA256, c.X509); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func nonNilS(s []string) []string {

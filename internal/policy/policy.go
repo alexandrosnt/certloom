@@ -88,6 +88,11 @@ type Spec struct {
 		Warning  Duration `json:"warning,omitempty"`
 		Critical Duration `json:"critical,omitempty"`
 	} `json:"expiry,omitempty"`
+	// CAExpiry applies to root and intermediate CAs in use (ADR-0029).
+	CAExpiry struct {
+		Warning  Duration `json:"warning,omitempty"`
+		Critical Duration `json:"critical,omitempty"`
+	} `json:"caExpiry,omitempty"`
 	Keys struct {
 		MinRSABits   int `json:"minRSABits,omitempty"`
 		MinECDSABits int `json:"minECDSABits,omitempty"`
@@ -155,6 +160,8 @@ func Default() *Document {
 	d.Metadata.Description = "built-in defaults"
 	d.Spec.Expiry.Warning = Duration(30 * 24 * time.Hour)
 	d.Spec.Expiry.Critical = Duration(7 * 24 * time.Hour)
+	d.Spec.CAExpiry.Warning = Duration(180 * 24 * time.Hour)
+	d.Spec.CAExpiry.Critical = Duration(30 * 24 * time.Hour)
 	d.Spec.Keys.MinRSABits = 2048
 	d.Spec.Keys.MinECDSABits = 256
 	d.Spec.Probing.FailuresBeforeAlert = 3
@@ -198,6 +205,12 @@ func (d *Document) fill() {
 	}
 	if s.Expiry.Critical == 0 {
 		s.Expiry.Critical = def.Spec.Expiry.Critical
+	}
+	if s.CAExpiry.Warning == 0 {
+		s.CAExpiry.Warning = def.Spec.CAExpiry.Warning
+	}
+	if s.CAExpiry.Critical == 0 {
+		s.CAExpiry.Critical = def.Spec.CAExpiry.Critical
 	}
 	if s.Keys.MinRSABits == 0 {
 		s.Keys.MinRSABits = def.Spec.Keys.MinRSABits
@@ -250,6 +263,13 @@ func (d *Document) Validate() error {
 	}
 	if w > 365*24*time.Hour {
 		add("expiry.warning must be at most 365d")
+	}
+	cw, cc := time.Duration(s.CAExpiry.Warning), time.Duration(s.CAExpiry.Critical)
+	if cc <= 0 || cw <= cc {
+		add("caExpiry.warning (%s) must be greater than caExpiry.critical (%s) and both positive", FormatDuration(cw), FormatDuration(cc))
+	}
+	if cw > 3*365*24*time.Hour {
+		add("caExpiry.warning must be at most 1095d")
 	}
 	if s.Keys.MinRSABits < 2048 {
 		add("keys.minRSABits may not be lowered below 2048")
@@ -306,6 +326,8 @@ func (d *Document) Checks() checks.Policy {
 		MinRSABits:           d.Spec.Keys.MinRSABits,
 		MinECDSABits:         d.Spec.Keys.MinECDSABits,
 		ProbeFailuresToAlert: d.Spec.Probing.FailuresBeforeAlert,
+		CAExpiryWarning:      time.Duration(d.Spec.CAExpiry.Warning),
+		CAExpiryCritical:     time.Duration(d.Spec.CAExpiry.Critical),
 	}
 }
 

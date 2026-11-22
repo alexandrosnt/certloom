@@ -134,7 +134,12 @@ func (s *Service) Import(ctx context.Context, p authz.Principal, data []byte, o 
 			if err != nil {
 				return err
 			}
-			res, err := tx.SyncFindings(ctx, "certificate", leaf.SHA256, checks.Certificate(leaf, s.now(), pv.Document.Checks()), s.now())
+			view, err := loadChainView(ctx, tx, s.now())
+			if err != nil {
+				return err
+			}
+			fs := append(checks.Certificate(leaf, s.now(), pv.Document.Checks()), view.findings(leaf, s.now())...)
+			res, err := tx.SyncFindings(ctx, "certificate", leaf.SHA256, fs, s.now())
 			if err != nil {
 				return err
 			}
@@ -577,6 +582,13 @@ func (s *Service) RunCertSweep(ctx context.Context, j jobs.Job) error {
 			return err
 		}
 		pol := pv.Document.Checks()
+		if err := linkPending(ctx, tx); err != nil {
+			return err
+		}
+		view, err := loadChainView(ctx, tx, now)
+		if err != nil {
+			return err
+		}
 		var after string
 		var afterNA time.Time
 		for {
@@ -585,7 +597,8 @@ func (s *Service) RunCertSweep(ctx context.Context, j jobs.Job) error {
 				return err
 			}
 			for _, c := range certs {
-				res, err := tx.SyncFindings(ctx, "certificate", c.SHA256, checks.Certificate(c.Certificate, now, pol), now)
+				fs := append(checks.Certificate(c.Certificate, now, pol), view.findings(c.Certificate, now)...)
+				res, err := tx.SyncFindings(ctx, "certificate", c.SHA256, fs, now)
 				if err != nil {
 					return err
 				}
@@ -602,6 +615,9 @@ func (s *Service) RunCertSweep(ctx context.Context, j jobs.Job) error {
 			}
 			last := certs[len(certs)-1]
 			after, afterNA = last.SHA256, last.NotAfter
+		}
+		if err := s.syncAuthorities(ctx, tx, view.graph, now, pol); err != nil {
+			return err
 		}
 		return jobs.Complete(ctx, tx, j)
 	})

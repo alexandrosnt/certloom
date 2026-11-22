@@ -1,0 +1,23 @@
+{{define "content"}}
+<h1>Certificate authorities</h1>
+<p class="muted">Root and intermediate CAs found in imported, probed and issued chains. Cross-signed copies of one CA (same subject and key) are grouped; the expiry is the end of the longest valid path through the CA.
+{{if .D.All}}Showing all. <a href="/authorities">Show only CAs in use</a>.{{else}}Showing CAs above a lineage's current certificate or a served leaf. <a href="/authorities?all=1">Show all</a>.{{end}}</p>
+{{if .D.Authorities}}
+<table>
+<thead><tr><th>Subject</th><th>Kind</th><th>Expiry</th><th>Left</th><th>Copies</th><th>Certificates signed</th><th>In use</th></tr></thead>
+<tbody>
+{{range .D.Authorities}}
+<tr>
+  <td class="wrap"><a href="/authorities/{{.Key}}">{{.Subject}}</a></td>
+  <td>{{if .Root}}root{{else}}intermediate{{end}}</td>
+  <td>{{ts .Expiry}}</td>
+  <td><span class="sev {{urgency .Expiry}}">{{left .Expiry}}</span></td>
+  <td>{{len .Copies}}</td>
+  <td>{{.Leaves}}</td>
+  <td>{{if .InUse}}yes{{else}}no{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="muted">No CA certificates yet. They are collected from imported chains, probed endpoints and issued certificates.</p>{{end}}
+{{end}}

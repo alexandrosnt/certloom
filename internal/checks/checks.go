@@ -81,6 +81,7 @@ var checkVersions = map[string]int{
 	CheckExpiry: 1, CheckNotYetValid: 1, CheckHostnameMismatch: 1, CheckChainIncomplete: 1, CheckUntrusted: 1, CheckWeakKey: 1,
 	CheckWeakSignature: 1, CheckFingerprintChanged: 1, CheckLineageMismatch: 1, CheckProbeFailed: 1,
 	CheckEABPool: 1, CheckEABKeyExpiring: 1,
+	CheckCAExpiring: 1, CheckChainOutlived: 1, CheckChainCertExpiring: 1,
 }
 
 // Version returns a check's definition version (0 for unknown checks).
@@ -105,6 +106,8 @@ type Policy struct {
 	MinRSABits           int           // default 2048
 	MinECDSABits         int           // default 256
 	ProbeFailuresToAlert int           // default 3
+	CAExpiryWarning      time.Duration // default 180d
+	CAExpiryCritical     time.Duration // default 30d
 }
 
 func (p Policy) withDefaults() Policy {
@@ -122,6 +125,12 @@ func (p Policy) withDefaults() Policy {
 	}
 	if p.ProbeFailuresToAlert == 0 {
 		p.ProbeFailuresToAlert = 3
+	}
+	if p.CAExpiryWarning == 0 {
+		p.CAExpiryWarning = 180 * 24 * time.Hour
+	}
+	if p.CAExpiryCritical == 0 {
+		p.CAExpiryCritical = 30 * 24 * time.Hour
 	}
 	return p
 }
@@ -282,6 +291,7 @@ func Endpoint(in EndpointInput) []Finding {
 			f.Fingerprint = fingerprint(f.Check, leaf.SHA256)
 		}
 	}
+	out = append(out, servedChain(o.Chain, in.Now)...)
 	out = append(out, Certificate(leaf, in.Now, pol)...)
 	return out
 }

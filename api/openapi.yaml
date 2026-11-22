@@ -1036,6 +1036,53 @@ paths:
       responses:
         "204": { description: Removed }
         "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/authorities:
+    get:
+      tags: [inventory]
+      summary: List CA authorities (subject + key; cross-signed copies grouped), soonest effective expiry first
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [root, intermediate] } }
+        - { name: in_use, in: query, description: Only authorities above a lineage's current certificate or a served leaf, schema: { type: boolean } }
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+        "400": { $ref: "#/components/responses/Problem" }
+  /api/v1/authorities/plan:
+    get:
+      tags: [inventory]
+      summary: Authorities in use whose effective expiry falls within the window, with impact counts and the renew-by date
+      parameters:
+        - { name: within, in: query, description: "Window such as 365d or 2160h (default 365d)", schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+        "400": { $ref: "#/components/responses/Problem" }
+  /api/v1/authorities/{key}:
+    get:
+      tags: [inventory]
+      summary: An authority (key or unique prefix of 8+ characters) and everything that chains through it
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/authorities/{key}/renew-affected:
+    post:
+      tags: [renewal]
+      summary: Start renewal runs (renewals:run) for deployments whose certificate chains through the authority and outlives the chain, or all of them; approvals and windows apply per run
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                all: { type: boolean }
+                dry_run: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "202": { $ref: "#/components/responses/Object" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
   /api/v1/deployments:
     get:
       tags: [renewal]

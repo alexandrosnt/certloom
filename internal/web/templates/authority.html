@@ -1,0 +1,46 @@
+{{define "content"}}
+{{with .D.Impact}}
+<h1>{{.Authority.Subject}}</h1>
+<p>{{if .Authority.Root}}Root CA{{else}}Intermediate CA{{end}} &middot; expires {{ts .Authority.Expiry}} (<span class="sev {{urgency .Authority.Expiry}}">{{left .Authority.Expiry}}</span>) &middot; {{if .InUse}}in use{{else}}not in use{{end}}<br>
+<span class="muted">key {{.Authority.Key}}</span></p>
+
+<h2>Copies</h2>
+<table>
+<thead><tr><th>Certificate</th><th>Issued by</th><th>Not after</th><th>Path valid until</th></tr></thead>
+<tbody>
+{{range .Authority.Copies}}
+<tr><td><a href="/certificates/{{.SHA256}}">{{short .SHA256}}</a></td><td class="wrap">{{if .SelfSigned}}self-signed{{else if .IssuerKey}}<a href="/authorities/{{.IssuerKey}}">{{.Issuer}}</a>{{else}}{{.Issuer}} <span class="muted">(not in inventory)</span>{{end}}</td>
+<td>{{ts .NotAfter}}</td><td>{{ts .ChainExpiry}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{if .Authority.Children}}<p>Signs CAs: {{range .Authority.Children}}<a href="/authorities/{{.}}">{{short .}}</a> {{end}}</p>{{end}}
+
+<h2>Lineages under this CA ({{len .Lineages}})</h2>
+{{if .Lineages}}
+<table>
+<thead><tr><th>Lineage</th><th>Current certificate expires</th><th>Chain expires</th><th>Action</th><th>Deployments</th></tr></thead>
+<tbody>
+{{range .Lineages}}
+<tr><td>{{.LineageName}}</td><td>{{ts .NotAfter}}</td><td>{{ts .ChainExpiry}}</td>
+<td>{{if .Outlives}}<span class="sev critical">renew before {{ts .ChainExpiry}}</span>{{else}}renews in time{{end}}</td>
+<td>{{range .Deployments}}{{.ID}}{{if not .Enabled}} (disabled){{end}} {{else}}-{{end}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{if $.D.CanRenew}}
+<form method="post" action="/authorities/{{.Authority.Key}}/renew-affected"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+<button type="submit">Renew deployments that outlive the chain</button>
+<label><input type="checkbox" name="all" value="1"> all deployments under this CA</label></form>
+<p class="muted">Each run follows the usual approvals and maintenance windows.</p>
+{{end}}
+{{else}}<p class="muted">No lineage's current certificate chains through this CA.</p>{{end}}
+
+<h2>Endpoints ({{len .Endpoints}})</h2>
+{{if .Endpoints}}
+<table><thead><tr><th>Endpoint</th><th>Served certificate expires</th></tr></thead><tbody>
+{{range .Endpoints}}<tr><td><a href="/endpoints/{{.EndpointID}}">{{.Host}}:{{.Port}}</a></td><td>{{ts .NotAfter}}</td></tr>{{end}}
+</tbody></table>
+{{else}}<p class="muted">No enabled endpoint serves a certificate under this CA.</p>{{end}}
+{{end}}
+{{end}}
