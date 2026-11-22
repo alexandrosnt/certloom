@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Added
-- Ansible collection `certloom.certloom` in its own repository (ADR-0026): modules for
+- Ansible collection `alexandrosnt.certloom` in its own repository (ADR-0026): modules for
   the configuration objects the Terraform provider covers, plus EAB pool keys, info
   modules and agent enrollment tokens, and a role that installs, configures and
   enrolls certloom-agent on Debian and Red Hat family hosts. No pip dependencies;

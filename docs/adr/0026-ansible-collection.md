@@ -98,9 +98,15 @@ Option A in all three cases.
   is not planned now.
 
 ## As built (2026-11-22)
+- The collection is published as `alexandrosnt.certloom`, not `certloom.certloom`.
+  Galaxy creates the namespace of the signed-in GitHub user automatically, while a
+  custom namespace needs a manual request on the Ansible Forum. The personal
+  namespace also matches the Terraform provider source `alexandrosnt/certloom`. If a
+  `certloom` namespace is granted later, the move is a new collection plus
+  `plugin_routing` redirects in `meta/runtime.yml`.
 - Repository `alexandrosnt/ansible-collection-certloom`, `requires_ansible: >=2.20.0`,
   CI on ansible-core 2.20, 2.21 and 2.22. The modules form the action group
-  `certloom.certloom.certloom`, so `module_defaults` can set `url` and `token` once.
+  `alexandrosnt.certloom.certloom`, so `module_defaults` can set `url` and `token` once.
 - Channels hold only a `credential_ref`, never a secret, so `update_secret` exists on
   `issuer` (EAB HMAC) and `dns_solver` (provider credential) only.
 - `template` and `policy` compare the server's parsed form of the current and the
