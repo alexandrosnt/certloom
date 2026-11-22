@@ -29,6 +29,10 @@ contents:
     dst: /usr/bin/certloom-agent
     file_info:
       mode: 0755
+  - src: dist/linux/certloom-plugin
+    dst: /usr/bin/certloom-plugin
+    file_info:
+      mode: 0755
   - src: deploy/systemd/certloom-agent.service
     dst: /usr/lib/systemd/system/certloom-agent.service
     file_info:

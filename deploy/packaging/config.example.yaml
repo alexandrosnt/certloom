@@ -46,3 +46,19 @@ targets:
 #   azure:
 #     - name: corp
 #       vaults: [https://corp-tls.vault.azure.net]
+
+# Plugins (ADR-0027, docs/plugins.md): publishers whose signed packages
+# `certloom-plugin install` accepts, plugin targets and discovery plugins.
+# plugins:
+#   trust:
+#     - name: corp
+#       public_key: /etc/certloom-agent/keys/corp-plugins.pub
+# targets:
+#   - name: lb-prod
+#     type: plugin
+#     plugin: corp-f5
+#     config: {host: bigip.internal}
+#     allowed_sans: [www.example.com]
+# discovery_plugins:
+#   - name: java-keystores
+#     plugin: corp-jks

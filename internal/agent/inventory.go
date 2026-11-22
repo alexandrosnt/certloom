@@ -86,6 +86,7 @@ func (a *Agent) handleInventory(ctx context.Context, _ *agentproto.Task) (any, e
 	if a.cfg.Cloud != nil {
 		out.Cloud = a.inventoryCloud(ctx)
 	}
+	out.Plugins = a.inventoryPlugins(ctx)
 	return out, nil
 }
 

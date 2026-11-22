@@ -36,3 +36,4 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0024](0024-cloud-observation.md) | Read-only cloud certificate observation | Accepted |
 | [0025](0025-terraform-provider.md) | Terraform/OpenTofu provider and public Go client | Accepted |
 | [0026](0026-ansible-collection.md) | Ansible collection | Accepted |
+| [0027](0027-plugin-sdk.md) | Out-of-process plugins with signed packages | Accepted |

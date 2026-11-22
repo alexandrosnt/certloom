@@ -39,7 +39,7 @@ The plugin writes one JSON object to stdout:
 
 | Case | Response |
 |---|---|
-| `describe` | `{"ok":true,"protocol":1,"name":"example","version":"1.2.0"}` |
+| `describe` | `{"ok":true,"protocol":1,"name":"example","version":"1.2.0","kinds":["dns_solver"]}` |
 | success | `{"ok":true}` |
 | failure | `{"error":"token rejected","class":"auth"}` |
 | rate limited | `{"error":"slow down","class":"rate_limited","retry_after":30}` |
@@ -62,7 +62,11 @@ copied to the agent log.
 
 ## Installing
 
-Install the executable root-owned and not writable by group or others, then pin its digest:
+A DNS plugin can be installed as a signed package with `certloom-plugin` and named in
+`plugin:` (`plugin: corp-dns`), like any other plugin; see [plugins.md](plugins.md).
+
+Or install the executable root-owned and not writable by group or others, then pin its
+digest:
 
 ```yaml
 dns_solvers:
@@ -88,5 +92,6 @@ cleans up twice and waits until the record is gone. Every step is reported as PA
 
 ## Go
 
-Plugins written in Go can use `github.com/alexandrosnt/certloom/dnsplugin`: implement
-`Handler` and call `dnsplugin.Serve` from `main` (see the package example).
+Plugins written in Go can use `github.com/alexandrosnt/certloom/plugin` (a `plugin.Server`
+with `DNS` set) or the older `github.com/alexandrosnt/certloom/dnsplugin`, which wraps it:
+implement `Handler` and call `dnsplugin.Serve` from `main` (see the package example).

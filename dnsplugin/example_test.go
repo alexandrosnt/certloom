@@ -30,5 +30,5 @@ func Example() {
 	h := &memoryDNS{records: map[string]string{}}
 	code := dnsplugin.Serve(context.Background(), "memory", "1.0.0", h, []string{"describe"}, os.Stdin, os.Stdout)
 	_ = code // os.Exit(code) in a real plugin
-	// Output: {"ok":true,"protocol":1,"name":"memory","version":"1.0.0"}
+	// Output: {"ok":true,"protocol":1,"name":"memory","version":"1.0.0","kinds":["dns_solver"]}
 }

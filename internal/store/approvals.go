@@ -95,6 +95,11 @@ func BuildDeploymentSpec(d *Deployment, iss *Issuer, a *Agent) DeploymentSpec {
 				slices.Sort(b)
 				tgt.Attributes = map[string]string{"site": strings.ToLower(t.Site), "bindings": strings.Join(b, ",")}
 			}
+			if t.Type == agentproto.TargetPlugin {
+				// Which plugin installs the certificate is part of what is approved;
+				// its version is not, so upgrades by the host admin need no approval.
+				tgt.Attributes = map[string]string{"plugin": t.Plugin}
+			}
 		}
 	}
 	spec := DeploymentSpec{V: 1, Lineage: d.LineageID, SANs: slices.Compact(sans), Purpose: PurposeTLSServer,

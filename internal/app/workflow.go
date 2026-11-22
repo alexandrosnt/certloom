@@ -138,6 +138,9 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 		if tgt == nil {
 			return invalid("agent %q does not report a target named %q (check its config and that it has sent a heartbeat)", a.Name, in.Target)
 		}
+		if tgt.Type == agentproto.TargetPlugin && !a.Capabilities.HasPlugin(tgt.Plugin, agentproto.PluginKindDeployTarget) {
+			return invalid("target %q uses plugin %q, which agent %q does not report as installed and trusted for deploy_target (see certloom agent plugins)", in.Target, tgt.Plugin, a.Name)
+		}
 		if dns01 && len(a.Capabilities.DNSSolvers) == 0 {
 			central, err := tx.ListDNSSolvers(ctx, a.ID)
 			if err != nil {
@@ -742,7 +745,7 @@ func (s *Service) advance(ctx context.Context, tx *store.Tx, runID string, ext e
 			case "pending", "delivered":
 				return nil
 			case "succeeded":
-				if err := s.sendTask(ctx, tx, r, d, agentproto.TaskVerify, agentproto.VerifyPayload{ExpectedSHA256: *r.IssuedSHA256, SNI: verifySNI(d.SANs)},
+				if err := s.sendTask(ctx, tx, r, d, agentproto.TaskVerify, agentproto.VerifyPayload{ExpectedSHA256: *r.IssuedSHA256, SNI: verifySNI(d.SANs), RunID: r.ID},
 					verifyTaskTTL, store.RunVerifying, "activated on target; verifying"); err != nil {
 					return err
 				}

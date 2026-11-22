@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/alexandrosnt/certloom/internal/agentproto"
+	"github.com/alexandrosnt/certloom/internal/pluginstore"
 	"sigs.k8s.io/yaml"
 )
 
@@ -49,6 +50,10 @@ type Config struct {
 	// WinACMEDir is read (never written) for win-acme discovery on Windows;
 	// default %ProgramData%win-acme.
 	WinACMEDir string `json:"win_acme_dir,omitempty"`
+	// Plugins is the trust policy for installed plugins (ADR-0027).
+	Plugins *pluginstore.Config `json:"plugins,omitempty"`
+	// DiscoveryPlugins report certificates during inventory.
+	DiscoveryPlugins []DiscoveryPluginConfig `json:"discovery_plugins,omitempty"`
 }
 
 // EABConfig is a host-local EAB key for one ACME directory.
@@ -62,7 +67,7 @@ type EABConfig struct {
 // TargetConfig is a locally configured deployment target.
 type TargetConfig struct {
 	Name string `json:"name"`
-	Type string `json:"type"` // nginx or iis
+	Type string `json:"type"` // nginx, iis or plugin
 	// LiveLink is a symlink the web server reads through, e.g.
 	// /etc/certloom/live/www -> <state_dir>/certs/www/<run>. The server config
 	// references LiveLink/fullchain.pem and LiveLink/privkey.pem.
@@ -77,6 +82,16 @@ type TargetConfig struct {
 	// certificate the agent replaces.
 	Site     string   `json:"site,omitempty"`
 	Bindings []string `json:"bindings,omitempty"`
+	// Plugin targets (ADR-0027): an installed deploy_target plugin (name or
+	// name@version) or an absolute path with SHA256. PluginConfig is passed
+	// to the plugin as config; Env names variables passed through. With
+	// Inventory set, the plugin is also asked what the target holds.
+	Plugin         string         `json:"plugin,omitempty"`
+	SHA256         string         `json:"sha256,omitempty"`
+	PluginConfig   map[string]any `json:"config,omitempty"`
+	Env            []string       `json:"env,omitempty"`
+	TimeoutSeconds int            `json:"timeout_seconds,omitempty"`
+	Inventory      bool           `json:"inventory,omitempty"`
 }
 
 // LoadConfig reads and validates a config file.
@@ -121,8 +136,10 @@ func (c *Config) Validate() error {
 			p = append(p, "duplicate target "+t.Name)
 		case t.Type == agentproto.TargetIIS:
 			p = append(p, t.validateIIS()...)
+		case t.Type == agentproto.TargetPlugin:
+			p = append(p, c.validatePluginTarget(&t)...)
 		case t.Type != agentproto.TargetNginx:
-			p = append(p, fmt.Sprintf("target %s: type must be nginx or iis", t.Name))
+			p = append(p, fmt.Sprintf("target %s: type must be nginx, iis or plugin", t.Name))
 		case !filepath.IsAbs(t.LiveLink):
 			p = append(p, fmt.Sprintf("target %s: live_link must be absolute", t.Name))
 		case len(t.TestCommand) == 0 || len(t.ReloadCommand) == 0:
@@ -136,6 +153,10 @@ func (c *Config) Validate() error {
 	}
 	p = append(p, c.validateDNS()...)
 	p = append(p, c.validateEAB()...)
+	if c.Plugins != nil {
+		p = append(p, c.Plugins.Validate()...)
+	}
+	p = append(p, c.validateDiscoveryPlugins()...)
 	if len(p) > 0 {
 		return errors.New("invalid agent config: " + strings.Join(p, "; "))
 	}
@@ -224,8 +245,14 @@ func (c *Config) inventoryInterval() int {
 			shortest(cloudDefaultInterval)
 		}
 	}
+	if len(c.DiscoveryPlugins) > 0 {
+		shortest(cloudDefaultInterval)
+	}
 	for _, t := range c.Targets {
 		if t.Type == agentproto.TargetIIS {
+			shortest(900)
+		}
+		if t.Type == agentproto.TargetPlugin && t.Inventory {
 			shortest(900)
 		}
 	}

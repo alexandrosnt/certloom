@@ -1,6 +1,6 @@
 # ADR-0007: Connector and plugin contracts
 
-**Status:** Accepted (2026-11-21)
+**Status:** Accepted (2026-11-21); out-of-process plugins amended by ADR-0027 (exec + JSON instead of gRPC, agent only)
 
 ## Context
 Every integration must state exactly what it can do and be tested capability by

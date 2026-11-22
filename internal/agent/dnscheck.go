@@ -12,7 +12,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/alexandrosnt/certloom/dnsplugin"
+	"github.com/alexandrosnt/certloom/plugin"
 	"github.com/go-acme/lego/v5/challenge/dns01"
 	"github.com/miekg/dns"
 )
@@ -44,14 +44,13 @@ func CheckDNSSolver(ctx context.Context, cfg *Config, solver, name string, out i
 		return true
 	}
 	if sc.Plugin != "" {
-		p := &dnsplugin.Plugin{Path: sc.Plugin, SHA256: sc.SHA256, Timeout: time.Duration(sc.TimeoutSeconds) * time.Second}
-		d, err := p.Call(ctx, dnsplugin.ActionDescribe, dnsplugin.Request{})
-		if !step("describe (pinned digest, protocol version)", err) {
+		d, err := describePlugin(ctx, cfg.pluginSource(), sc.Plugin, sc.SHA256, plugin.KindDNSSolver, sc.Env, sc.TimeoutSeconds)
+		if !step("describe (digest, protocol version, kind)", err) {
 			return errors.New("dns solver check failed")
 		}
 		fmt.Fprintf(out, "      plugin %s %s\n", d.Name, d.Version)
 	}
-	m, err := newDNSMux([]DNSSolverConfig{*sc}, log)
+	m, err := newDNSMux([]DNSSolverConfig{*sc}, cfg.pluginSource(), log)
 	if !step("load solver and credentials", err) {
 		return errors.New("dns solver check failed")
 	}

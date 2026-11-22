@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -78,19 +79,23 @@ type RenewRequest struct {
 // Target is a deployment target configured locally on the agent.
 type Target struct {
 	Name        string   `json:"name"`
-	Type        string   `json:"type"` // nginx or iis
+	Type        string   `json:"type"` // nginx, iis or plugin
 	AllowedSANs []string `json:"allowed_sans"`
 	ACME        bool     `json:"acme"` // has an HTTP-01 webroot
 	// Site and Bindings identify an IIS target (ADR-0022); both are part of
 	// the approved deployment spec.
 	Site     string   `json:"site,omitempty"`
 	Bindings []string `json:"bindings,omitempty"`
+	// Plugin names the deploy_target plugin of a plugin target (ADR-0027),
+	// without a version; it is part of the approved deployment spec.
+	Plugin string `json:"plugin,omitempty"`
 }
 
 // Target types.
 const (
-	TargetNginx = "nginx"
-	TargetIIS   = "iis"
+	TargetNginx  = "nginx"
+	TargetIIS    = "iis"
+	TargetPlugin = "plugin"
 )
 
 // DNSSolver describes one DNS-01 solver configured on an agent host.
@@ -139,6 +144,23 @@ type Heartbeat struct {
 	// InventorySeconds asks the control plane for an inventory task at this
 	// interval (in-cluster agents, IIS hosts for binding drift); 0 = on demand.
 	InventorySeconds int `json:"inventory_seconds,omitempty"`
+	// Plugins lists the plugins installed or pinned on the host (ADR-0027).
+	Plugins []PluginInfo `json:"plugins,omitempty"`
+}
+
+// PluginInfo describes one plugin an agent may run.
+type PluginInfo struct {
+	Name    string   `json:"name"`
+	Version string   `json:"version,omitempty"`
+	Kinds   []string `json:"kinds"`
+	// SHA256 is the digest of the executable.
+	SHA256 string `json:"sha256"`
+	// Trust and Signer are set for installed, signed plugins: the trust
+	// entry that matched and the certificate identity or key fingerprint.
+	Trust  string `json:"trust,omitempty"`
+	Signer string `json:"signer,omitempty"`
+	// Pinned is set for plugins configured by path and digest instead.
+	Pinned bool `json:"pinned,omitempty"`
 }
 
 // Task is the signed unit of work.
@@ -279,6 +301,9 @@ type DeployOutput struct {
 type VerifyPayload struct {
 	ExpectedSHA256 string `json:"expected_sha256"`
 	SNI            string `json:"sni"`
+	// RunID identifies the deploy being verified; plugin targets pass it on
+	// as the idempotency key. Older control planes leave it empty.
+	RunID string `json:"run_id,omitempty"`
 }
 
 // VerifyOutput reports what the local endpoint served.
@@ -301,6 +326,27 @@ type InventoryOutput struct {
 	WinACME    []WinACMERenewal `json:"win_acme,omitempty"`
 	Kubernetes *KubeInventory   `json:"kubernetes,omitempty"`
 	Cloud      *CloudInventory  `json:"cloud,omitempty"`
+	// Plugins holds what discovery plugins and deploy_target plugins with
+	// an inventory action reported.
+	Plugins []PluginInventory `json:"plugins,omitempty"`
+}
+
+// PluginInventory is the answer of one plugin inventory call. Source is the
+// discovery or target name from the agent config. If Error is set, the
+// call failed and Items is empty; findings from that source are kept.
+type PluginInventory struct {
+	Source string       `json:"source"`
+	Kind   string       `json:"kind"`
+	Plugin string       `json:"plugin"`
+	Items  []PluginItem `json:"items,omitempty"`
+	Error  string       `json:"error,omitempty"`
+}
+
+// PluginItem is one certificate a plugin found.
+type PluginItem struct {
+	PEM      string   `json:"pem"`
+	Location string   `json:"location"`
+	UsedBy   []string `json:"used_by,omitempty"`
 }
 
 // Cloud certificate services an agent can observe (ADR-0024). The value is
@@ -527,3 +573,18 @@ func (h Heartbeat) AcceptsCentralDNS() bool { return len(h.SealKey) > 0 && !h.No
 
 // AcceptsCentralEAB reports whether EAB keys can be sent to the agent.
 func (h Heartbeat) AcceptsCentralEAB() bool { return len(h.SealKey) > 0 && !h.NoCentralEAB }
+
+// PluginKindDeployTarget is the plugin kind of plugin targets; the values
+// match package plugin.
+const PluginKindDeployTarget = "deploy_target"
+
+// HasPlugin reports whether the agent runs plugin name (an installed name
+// or a pinned path, as plugin targets report it) for kind.
+func (h Heartbeat) HasPlugin(name, kind string) bool {
+	for _, p := range h.Plugins {
+		if p.Name == name && slices.Contains(p.Kinds, kind) {
+			return true
+		}
+	}
+	return false
+}

@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -101,23 +100,12 @@ func (a *Agent) handleDeploy(ctx context.Context, t *agentproto.Task) (any, erro
 	if tgt.Type == agentproto.TargetIIS {
 		return a.deployIIS(ctx, tgt, p)
 	}
+	if tgt.Type == agentproto.TargetPlugin {
+		return a.deployPlugin(ctx, tgt, p)
+	}
 	dir := a.runDir(tgt.Name, p.RunID)
-	keyPEM, err := os.ReadFile(filepath.Join(dir, "privkey.pem"))
-	if err != nil {
-		return nil, fmt.Errorf("no private key for run %s on this host (was it issued by this agent?): %w", p.RunID, err)
-	}
-	pair, err := tls.X509KeyPair([]byte(p.ChainPEM), keyPEM)
-	if err != nil {
-		return nil, fmt.Errorf("certificate does not match the run's private key: %w", err)
-	}
-	leaf, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil {
+	if _, _, err := a.runMaterial(tgt, p); err != nil {
 		return nil, err
-	}
-	for _, san := range leaf.DNSNames {
-		if !agentproto.SANAllowed(san, tgt.AllowedSANs, true) { // wildcards only come from a DNS-01 issue step
-			return nil, fmt.Errorf("certificate SAN %q not allowed for target %s", san, tgt.Name)
-		}
 	}
 	if err := writeAtomic(filepath.Join(dir, "fullchain.pem"), []byte(p.ChainPEM), 0o644); err != nil {
 		return nil, err
@@ -173,6 +161,9 @@ func (a *Agent) handleVerify(ctx context.Context, t *agentproto.Task) (any, erro
 	if tgt.Type == agentproto.TargetIIS {
 		return a.verifyIIS(ctx, tgt, p)
 	}
+	if tgt.Type == agentproto.TargetPlugin && tgt.VerifyAddress == "" {
+		return a.verifyPlugin(ctx, tgt, p)
+	}
 	var served string
 	var lastErr error
 	// Reloads are asynchronous: give old workers a few seconds to drain.
@@ -221,6 +212,9 @@ func (a *Agent) handleRollback(ctx context.Context, t *agentproto.Task) (any, er
 	}
 	if tgt.Type == agentproto.TargetIIS {
 		return a.rollbackIIS(ctx, tgt, p)
+	}
+	if tgt.Type == agentproto.TargetPlugin {
+		return a.rollbackPlugin(ctx, tgt, p)
 	}
 	prev, ok := a.state.LookupPrevious(tgt.Name, p.RunID)
 	if !ok {

@@ -267,7 +267,7 @@ func (a *Agent) Heartbeat(ctx context.Context) error {
 	hb := agentproto.Heartbeat{Version: version.Version, Hostname: host}
 	for _, t := range a.cfg.Targets {
 		hb.Targets = append(hb.Targets, agentproto.Target{Name: t.Name, Type: t.Type, AllowedSANs: t.AllowedSANs, ACME: t.Webroot != "",
-			Site: t.Site, Bindings: t.Bindings})
+			Site: t.Site, Bindings: t.Bindings, Plugin: pluginTargetName(t)})
 	}
 	for _, t := range agentproto.AllTaskTypes {
 		if a.cfg.taskAllowed(t) {
@@ -275,6 +275,7 @@ func (a *Agent) Heartbeat(ctx context.Context) error {
 		}
 	}
 	hb.DNSSolvers = a.cfg.dnsSolverInfo()
+	hb.Plugins = a.cfg.pluginInfos()
 	hb.InventorySeconds = a.cfg.inventoryInterval()
 	hb.NoCentralDNS, hb.NoCentralEAB = !a.cfg.centralDNSAllowed(), !a.cfg.centralEABAllowed()
 	if !hb.NoCentralDNS || !hb.NoCentralEAB {

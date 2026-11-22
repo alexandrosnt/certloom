@@ -60,6 +60,7 @@ func buildDeb(t *testing.T) string {
 		cp(filepath.Join(root, filepath.FromSlash(f)), f)
 	}
 	cp(filepath.Join(linuxBin, "certloom-agent"), "dist/linux/certloom-agent")
+	cp(filepath.Join(linuxBin, "certloom-plugin"), "dist/linux/certloom-plugin")
 
 	args := []string{"run", "--rm", "-v", stage + ":/src", "-w", "/src", "-e", "VERSION=" + e2eVersion, "-e", "GOARCH=" + runtime.GOARCH}
 	if uid := os.Getuid(); uid >= 0 {
@@ -140,6 +141,9 @@ func TestSystemdPackageRenewal(t *testing.T) {
 	}
 	if o, _ := tryDocker("exec", c, "systemctl", "is-active", "certloom-agent"); o != "inactive" {
 		t.Fatalf("certloom-agent after install: is-active = %q, want inactive", o)
+	}
+	if o := sh("certloom-plugin version"); !strings.Contains(o, e2eVersion) {
+		t.Fatalf("certloom-plugin from the package: %q", o)
 	}
 	if o := sh("stat -c '%a %U' /var/lib/certloom-agent"); o != "700 root" {
 		t.Fatalf("/var/lib/certloom-agent: %q", o)

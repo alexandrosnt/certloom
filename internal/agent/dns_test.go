@@ -166,7 +166,8 @@ func TestDNSConfigValidation(t *testing.T) {
 		{"no tsig", []DNSSolverConfig{{Name: "a", Provider: "rfc2136", Nameserver: "ns:53", Zones: []string{"x"}}}, nil, "tsig_file"},
 		{"no zones", []DNSSolverConfig{{Name: "a", Provider: "cloudflare", TokenFile: key}}, nil, "zones"},
 		{"plugin sha", []DNSSolverConfig{{Name: "a", Plugin: "/p", SHA256: "abc", Zones: []string{"x"}}}, nil, "sha256"},
-		{"relative plugin", []DNSSolverConfig{{Name: "a", Plugin: "p", SHA256: sha, Zones: []string{"x"}}}, nil, "absolute"},
+		{"installed plugin with sha", []DNSSolverConfig{{Name: "a", Plugin: "p", SHA256: sha, Zones: []string{"x"}}}, nil, "only for plugins given by path"},
+		{"bad plugin ref", []DNSSolverConfig{{Name: "a", Plugin: "./p", Zones: []string{"x"}}}, nil, "installed plugin name"},
 		{"dup zone", []DNSSolverConfig{{Name: "a", Provider: "cloudflare", TokenFile: key, Zones: []string{"Example.com"}},
 			{Name: "b", Provider: "cloudflare", TokenFile: key, Zones: []string{"example.com."}}}, nil, "claimed by"},
 		{"dup name", []DNSSolverConfig{{Name: "a", Provider: "cloudflare", TokenFile: key, Zones: []string{"x"}},
@@ -259,7 +260,7 @@ func TestDNSMuxFollowsCNAME(t *testing.T) {
 	key := writeTSIGKey(t, "hmac-sha256", testTSIGSecret)
 	m, err := newDNSMux([]DNSSolverConfig{
 		{Name: "validation", Provider: ProviderRFC2136, Nameserver: f.addr, TSIGFile: key, Zones: []string{"validation.example.net"}},
-	}, quietLog)
+	}, pluginSource{}, quietLog)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +311,7 @@ func TestCloudflareSolver(t *testing.T) {
 	tok := filepath.Join(t.TempDir(), "cf.token")
 	_ = os.WriteFile(tok, []byte("good-token\n"), 0o600)
 	cfg := DNSSolverConfig{Name: "cf", Provider: ProviderCloudflare, TokenFile: tok, APIURL: srv.URL, Zones: []string{"example.test"}}
-	m, err := newDNSMux([]DNSSolverConfig{cfg}, quietLog)
+	m, err := newDNSMux([]DNSSolverConfig{cfg}, pluginSource{}, quietLog)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +327,7 @@ func TestCloudflareSolver(t *testing.T) {
 	}
 
 	_ = os.WriteFile(tok, []byte("rotated-but-wrong"), 0o600)
-	m, err = newDNSMux([]DNSSolverConfig{cfg}, quietLog)
+	m, err = newDNSMux([]DNSSolverConfig{cfg}, pluginSource{}, quietLog)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +357,7 @@ func TestWildcardSANRules(t *testing.T) {
 }
 
 func TestIssueDNS01NeedsSolvers(t *testing.T) {
-	_, err := newDNSMux(nil, quietLog)
+	_, err := newDNSMux(nil, pluginSource{}, quietLog)
 	if err == nil || !strings.Contains(err.Error(), "no dns_solvers") {
 		t.Fatalf("got %v", err)
 	}

@@ -2,6 +2,19 @@
 
 Not done yet, roughly in the order I want to tackle it.
 
+## Plugins
+- Docker e2e with a shell `deploy_target` plugin packed, signed, installed with
+  `certloom-plugin` and used for a renewal against Pebble (today: unit, agent, installer
+  and workflow tests).
+- Keyless verification is tested against a virtual Sigstore only; add an opt-in live test
+  against a package signed in GitHub Actions and the public-good trusted root.
+- Key-based bundles uploaded to Rekor (cosign without `--tlog-upload=false`) are not
+  covered by a test yet.
+- `certloom-plugin` on Windows: ACLs of the plugins directory and the MSI (M8).
+- Ansible role variables for `plugins.trust` and plugin installs.
+- Distribution through OCI registries (falcoctl style); issuer and notifier plugins on
+  the control plane need their own ADR.
+
 ## Renewal
 - No command to change a deployment's issuer (e.g. staging to production); today it
   means recreating the deployment.

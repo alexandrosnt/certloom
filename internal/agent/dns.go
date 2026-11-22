@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/alexandrosnt/certloom/dnsplugin"
 	"github.com/alexandrosnt/certloom/internal/agentproto"
+	"github.com/alexandrosnt/certloom/plugin"
 	"github.com/go-acme/lego/v5/challenge"
 	"github.com/go-acme/lego/v5/challenge/dns01"
 	"github.com/go-acme/lego/v5/providers/dns/cloudflare"
@@ -89,12 +89,8 @@ func (s *DNSSolverConfig) validate() []string {
 			bad("api_url must be https")
 		}
 	case s.Plugin != "":
-		if !filepath.IsAbs(s.Plugin) {
-			bad("plugin must be an absolute path")
-		}
-		if b, err := hex.DecodeString(s.SHA256); err != nil || len(b) != 32 {
-			bad("sha256 must be the plugin's hex SHA-256 digest")
-		}
+		// The reference is checked by Config.validateDNS, which knows the
+		// plugin trust policy.
 	case s.Provider == "":
 		bad("provider or plugin is required")
 	default:
@@ -122,6 +118,11 @@ func (c *Config) validateDNS() []string {
 		}
 		names[s.Name] = true
 		p = append(p, s.validate()...)
+		if s.Plugin != "" {
+			if err := c.validatePluginRef(s.Plugin, s.SHA256); err != nil {
+				p = append(p, fmt.Sprintf("dns solver %s: %v", s.Name, err))
+			}
+		}
 		for _, z := range s.Zones {
 			z = dns.Fqdn(strings.ToLower(z))
 			if other, ok := zones[z]; ok {
@@ -176,7 +177,7 @@ func (h pluginHandler) Cleanup(ctx context.Context, req dnsplugin.Request) error
 	return err
 }
 
-func newDNSMux(cfgs []DNSSolverConfig, log *slog.Logger) (*dnsMux, error) {
+func newDNSMux(cfgs []DNSSolverConfig, src pluginSource, log *slog.Logger) (*dnsMux, error) {
 	if len(cfgs) == 0 {
 		return nil, errors.New("dns-01 requested but this host has no dns_solvers")
 	}
@@ -190,14 +191,9 @@ func newDNSMux(cfgs []DNSSolverConfig, log *slog.Logger) (*dnsMux, error) {
 		var err error
 		switch {
 		case c.Plugin != "":
-			env := map[string]string{}
-			for _, k := range c.Env {
-				if v, ok := os.LookupEnv(k); ok {
-					env[k] = v
-				}
-			}
-			s.records = pluginHandler{&dnsplugin.Plugin{Path: c.Plugin, SHA256: c.SHA256, Env: env,
-				Timeout: time.Duration(c.TimeoutSeconds) * time.Second, Stderr: &logWriter{log: log, solver: c.Name}}}
+			var p *dnsplugin.Plugin
+			p, err = src.open(c.Plugin, c.SHA256, plugin.KindDNSSolver, c.Env, c.TimeoutSeconds, &logWriter{log: log, solver: c.Name})
+			s.records = pluginHandler{p}
 		case c.Provider == ProviderRFC2136:
 			s.records, err = newRFC2136(c)
 		case c.Provider == ProviderCloudflare:

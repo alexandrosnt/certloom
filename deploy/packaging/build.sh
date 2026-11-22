@@ -21,6 +21,10 @@ bin=dist/linux/certloom-agent
 CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH go build -trimpath \
     -ldflags "-s -w -X github.com/alexandrosnt/certloom/internal/version.Version=${VERSION} -X github.com/alexandrosnt/certloom/internal/version.Commit=${COMMIT}" \
     -o "$bin" ./cmd/certloom-agent
+# certloom-plugin is its own Go module (ADR-0027), built from its directory.
+(cd cmd/certloom-plugin && CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH go build -trimpath \
+    -ldflags "-s -w -X github.com/alexandrosnt/certloom/internal/version.Version=${VERSION} -X github.com/alexandrosnt/certloom/internal/version.Commit=${COMMIT}" \
+    -o ../../dist/linux/certloom-plugin .)
 
 # Docker Desktop on Windows (Git Bash) needs a native path and no path rewriting.
 src=$(pwd -W 2>/dev/null || pwd)

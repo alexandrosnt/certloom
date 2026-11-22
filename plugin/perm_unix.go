@@ -1,5 +1,5 @@
 //go:build !windows
 
-package dnsplugin
+package plugin
 
 const skipPermCheck = false

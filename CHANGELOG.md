@@ -2,7 +2,21 @@
 
 ## Unreleased
 
+### Fixed
+- The plugin output limit (64 KiB) was not enforced: the buffer inherited `ReadFrom`, which
+  `os/exec` used instead of the limited `Write`.
+
 ### Added
+- Agent plugins (ADR-0027): one exec + JSON protocol for DNS solvers, deploy targets
+  (`type: plugin`: deploy, verify, rollback, inventory) and discovery plugins, with the
+  public Go package `github.com/alexandrosnt/certloom/plugin` (`dnsplugin` now wraps it).
+  Signed packages: `certloom-plugin pack|verify|install|list|remove`, a separate binary in
+  the agent packages that checks Sigstore bundles (keyless CI identity or public key,
+  offline with a trusted root) against `plugins.trust` in the agent config and refuses
+  unsigned packages. The agent re-checks the installed digest before every call, reports
+  its plugins in the heartbeat (`certloom agent plugins`), and `certloom-agent
+  plugin-test` runs a plugin's read-only calls. The plugin of a plugin target is part of
+  the approved deployment spec.
 - Ansible collection `alexandrosnt.certloom` in its own repository (ADR-0026): modules for
   the configuration objects the Terraform provider covers, plus EAB pool keys, info
   modules and agent enrollment tokens, and a role that installs, configures and

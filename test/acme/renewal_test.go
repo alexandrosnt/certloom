@@ -51,6 +51,14 @@ func TestMain(m *testing.M) {
 		fmt.Printf("linux build: %v\n%s", err, out)
 		os.Exit(1)
 	}
+	// certloom-plugin is its own module (ADR-0027) and goes into the agent package.
+	p := exec.Command("go", "build", "-ldflags", "-X github.com/alexandrosnt/certloom/internal/version.Version="+e2eVersion,
+		"-o", linuxBin+"/certloom-plugin", ".")
+	p.Dir, p.Env = filepath.Join(root, "cmd", "certloom-plugin"), b.Env
+	if out, err := p.CombinedOutput(); err != nil {
+		fmt.Printf("linux build of certloom-plugin: %v\n%s", err, out)
+		os.Exit(1)
+	}
 	h := exec.Command("go", "build", "-o", hostBin+string(os.PathSeparator), "./cmd/certloom")
 	h.Dir = root
 	if out, err := h.CombinedOutput(); err != nil {

@@ -115,6 +115,20 @@ Plugins can use the host's cloud identity instead of a stored secret:
   credentials for the whole organization.
 - Every delivery is audited (`dns_solvers.secret_delivered`).
 
+## 2b. Plugin targets and discovery plugins
+
+For applications and appliances the agent has no built-in target for, install a signed
+plugin package and use a `type: plugin` target (details, protocol and signing in
+[docs/plugins.md](../plugins.md)):
+
+```sh
+# trust the publisher once: plugins.trust in config.yaml, then
+certloom-plugin install https://downloads.example.com/certloom-plugin-corp-f5_1.2.0_linux_amd64.tar.gz
+certloom-agent check-config
+certloom-agent plugin-test --target lb-prod     # describe, verify, inventory (read-only)
+certloom agent plugins web-01                   # what the control plane sees
+```
+
 ## 3. Point Nginx at the live link
 
 ```nginx

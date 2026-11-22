@@ -27,12 +27,16 @@ Usage:
   certloom-agent run [--config FILE] [--enroll-token-file FILE --ca-hash sha256:...]
   certloom-agent check-config [--config FILE]
   certloom-agent dns-test --solver NAME --name DOMAIN [--config FILE]
+  certloom-agent plugin-test --target NAME | --discovery NAME [--config FILE]
   certloom-agent service install|uninstall [--config FILE]   (Windows)
   certloom-agent version
 
 dns-test writes and removes a random TXT record for _acme-challenge.DOMAIN
 through one of the config's dns_solvers and checks that it resolves. Use it to
 verify credentials and permissions, and as the conformance test for plugins.
+
+plugin-test runs the read-only calls of a plugin target or discovery plugin
+(describe, verify, inventory). Deploy and rollback are not called.
 
 The enrollment token is read from stdin (never from argv).
 Default config: /etc/certloom-agent/config.yaml, on Windows
@@ -54,6 +58,8 @@ func main() {
 	_ = fs.Bool("token-stdin", true, "read the token from stdin (always on)")
 	solver := fs.String("solver", "", "dns-test: name of the dns solver to check")
 	name := fs.String("name", "", "dns-test: domain to prove control of, e.g. www.example.com")
+	pluginTarget := fs.String("target", "", "plugin-test: plugin target to check")
+	pluginDiscovery := fs.String("discovery", "", "plugin-test: discovery plugin to check")
 	tokenFile := fs.String("enroll-token-file", "", "run: enroll first with the token in this file if not enrolled yet (containers)")
 	args := os.Args[2:]
 	var action string
@@ -82,6 +88,16 @@ func main() {
 			break
 		}
 		err = agent.CheckDNSSolver(ctx, cfg, *solver, *name, os.Stdout, log)
+	case "plugin-test":
+		var cfg *agent.Config
+		if cfg, err = agent.LoadConfig(*cfgPath); err != nil {
+			break
+		}
+		if (*pluginTarget == "") == (*pluginDiscovery == "") {
+			err = errors.New("give one of --target and --discovery")
+			break
+		}
+		err = agent.CheckPlugin(ctx, cfg, *pluginTarget, *pluginDiscovery, os.Stdout)
 	case "enroll":
 		err = enroll(ctx, *cfgPath, *caHash, *server)
 	case "service":

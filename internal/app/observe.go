@@ -18,18 +18,19 @@ import (
 // storedInventory is what is kept of an inventory: observations, not the
 // certificate files, which go into the certificate inventory instead.
 type storedInventory struct {
-	Certbot    []agentproto.CertbotLineage `json:"certbot,omitempty"`
-	IIS        []agentproto.IISBinding     `json:"iis,omitempty"`
-	WinACME    []agentproto.WinACMERenewal `json:"win_acme,omitempty"`
-	Kubernetes *agentproto.KubeInventory   `json:"kubernetes,omitempty"`
-	Cloud      *agentproto.CloudInventory  `json:"cloud,omitempty"`
+	Certbot    []agentproto.CertbotLineage  `json:"certbot,omitempty"`
+	IIS        []agentproto.IISBinding      `json:"iis,omitempty"`
+	WinACME    []agentproto.WinACMERenewal  `json:"win_acme,omitempty"`
+	Kubernetes *agentproto.KubeInventory    `json:"kubernetes,omitempty"`
+	Cloud      *agentproto.CloudInventory   `json:"cloud,omitempty"`
+	Plugins    []agentproto.PluginInventory `json:"plugins,omitempty"`
 }
 
 // importObservations stores an agent's IIS, win-acme and Kubernetes
 // observations, imports the certificates they carry and syncs drift and
 // Kubernetes findings. It returns the number of new certificates.
 func (s *Service) importObservations(ctx context.Context, tx *store.Tx, agentID string, inv agentproto.InventoryOutput) (int, error) {
-	if len(inv.IIS) == 0 && len(inv.WinACME) == 0 && inv.Kubernetes == nil && inv.Cloud == nil && len(inv.Certbot) == 0 {
+	if len(inv.IIS) == 0 && len(inv.WinACME) == 0 && inv.Kubernetes == nil && inv.Cloud == nil && len(inv.Certbot) == 0 && len(inv.Plugins) == 0 {
 		return 0, nil
 	}
 	now := s.now()
@@ -73,7 +74,22 @@ func (s *Service) importObservations(ctx context.Context, tx *store.Tx, agentID 
 			}
 		}
 	}
-	stored := storedInventory{Certbot: inv.Certbot, IIS: inv.IIS, WinACME: inv.WinACME, Kubernetes: inv.Kubernetes, Cloud: inv.Cloud}
+	// Plugin items are imported under source "plugin"; the stored copy keeps
+	// where they were found and what uses them, not the PEMs.
+	var plugins []agentproto.PluginInventory
+	for _, pi := range inv.Plugins {
+		items := make([]agentproto.PluginItem, 0, len(pi.Items))
+		for _, it := range pi.Items {
+			if err := importPEM(it.PEM, "plugin"); err != nil {
+				return n, err
+			}
+			it.PEM = ""
+			items = append(items, it)
+		}
+		pi.Items = items
+		plugins = append(plugins, pi)
+	}
+	stored := storedInventory{Certbot: inv.Certbot, IIS: inv.IIS, WinACME: inv.WinACME, Kubernetes: inv.Kubernetes, Cloud: inv.Cloud, Plugins: plugins}
 	if stored.Kubernetes != nil {
 		k := *stored.Kubernetes
 		k.Certificates = slices.Clone(k.Certificates)

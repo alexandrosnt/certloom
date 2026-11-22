@@ -171,7 +171,7 @@ func (a *Agent) setChallenge(client *lego.Client, tgt *TargetConfig, t *agentpro
 	if err != nil {
 		return err
 	}
-	mux, err := newDNSMux(solvers, a.log)
+	mux, err := newDNSMux(solvers, a.cfg.pluginSource(), a.log)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package dnsplugin
+package plugin
 
 import (
 	"context"
@@ -42,13 +42,13 @@ func (r recorder) Cleanup(context.Context, Request) error { return r.fail }
 func fakePlugin(mode string) int {
 	switch mode {
 	case "ok":
-		return Serve(context.Background(), "fake", "1.0.0", recorder{}, os.Args[1:], os.Stdin, os.Stdout)
+		return (&Server{Name: "fake", Version: "1.0.0", DNS: recorder{}}).Serve(context.Background(), os.Args[1:], os.Stdin, os.Stdout)
 	case "auth":
 		h := recorder{fail: &Classified{Class: ClassAuth, Err: errors.New("token rejected")}}
-		return Serve(context.Background(), "fake", "1.0.0", h, os.Args[1:], os.Stdin, os.Stdout)
+		return (&Server{Name: "fake", Version: "1.0.0", DNS: h}).Serve(context.Background(), os.Args[1:], os.Stdin, os.Stdout)
 	case "ratelimit":
 		h := recorder{fail: &Classified{Class: ClassRateLimited, RetryAfter: 30 * time.Second, Err: errors.New("slow down")}}
-		return Serve(context.Background(), "fake", "1.0.0", h, os.Args[1:], os.Stdin, os.Stdout)
+		return (&Server{Name: "fake", Version: "1.0.0", DNS: h}).Serve(context.Background(), os.Args[1:], os.Stdin, os.Stdout)
 	case "proto2":
 		fmt.Println(`{"ok":true,"protocol":2,"name":"future"}`)
 	case "garbage":
@@ -57,7 +57,15 @@ func fakePlugin(mode string) int {
 		fmt.Fprintln(os.Stderr, "boom")
 		return 3
 	case "huge":
-		fmt.Print(strings.Repeat("x", MaxOutput+1))
+		// Valid JSON, so only the size limit can reject it.
+		fmt.Printf(`{"ok":true,"name":"%s"}`, strings.Repeat("x", MaxOutput))
+	case "inventory":
+		// Larger than MaxOutput, which only inventory answers may be.
+		items := make([]Item, 200)
+		for i := range items {
+			items[i] = Item{Certificate: strings.Repeat("c", 1000), Location: fmt.Sprint("slot ", i)}
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(Response{OK: true, Items: items})
 	case "slow":
 		time.Sleep(10 * time.Second)
 	case "env":
@@ -157,7 +165,7 @@ func TestPluginEnvironmentIsMinimal(t *testing.T) {
 func TestPluginPinnedDigest(t *testing.T) {
 	p := testPlugin(t, "ok")
 	p.SHA256 = strings.Repeat("0", 64)
-	if _, err := p.Call(context.Background(), ActionPresent, req); err == nil || !strings.Contains(err.Error(), "config pins") {
+	if _, err := p.Call(context.Background(), ActionPresent, req); err == nil || !strings.Contains(err.Error(), "expected") {
 		t.Fatalf("got %v", err)
 	}
 	p.Path = "relative/plugin"
@@ -193,7 +201,7 @@ func TestServeRejectsBadRequests(t *testing.T) {
 		{[]string{"rename"}, `{"protocol":1,"fqdn":"a.","value":"v"}`},
 	} {
 		var out strings.Builder
-		if code := Serve(context.Background(), "x", "1", recorder{}, c.args, strings.NewReader(c.in), &out); code == 0 {
+		if code := (&Server{Name: "x", Version: "1", DNS: recorder{}}).Serve(context.Background(), c.args, strings.NewReader(c.in), &out); code == 0 {
 			t.Errorf("%v %q: exit 0", c.args, c.in)
 		}
 		var r Response
