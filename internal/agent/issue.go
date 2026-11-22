@@ -157,6 +157,41 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 	return agentproto.IssueOutput{ChainPEM: string(res.Certificate), AccountSlot: p.AccountSlot}, nil
 }
 
+// handleCSR makes the run's key and returns a CSR for an issuer the control
+// plane signs with (ADR-0028). The allowlist check is the same as for ACME:
+// the control plane is not trusted to decide which names this host gets.
+func (a *Agent) handleCSR(_ context.Context, t *agentproto.Task) (any, error) {
+	tgt, ok := a.cfg.target(t.Target)
+	if !ok {
+		return nil, fmt.Errorf("unknown target %q", t.Target)
+	}
+	var p agentproto.CSRPayload
+	if err := json.Unmarshal(t.Payload, &p); err != nil {
+		return nil, err
+	}
+	if p.RunID == "" || len(p.SANs) == 0 {
+		return nil, errors.New("csr task needs run_id and sans")
+	}
+	if p.KeyAlgorithm != "" && p.KeyAlgorithm != agentproto.KeyECDSAP256 {
+		return nil, fmt.Errorf("unsupported key algorithm %q", p.KeyAlgorithm)
+	}
+	for _, san := range p.SANs {
+		if !agentproto.SANAllowed(san, tgt.AllowedSANs, true) {
+			return nil, fmt.Errorf("SAN %q is not in this host's allowed_sans for target %s", san, tgt.Name)
+		}
+	}
+	key, err := a.runKey(tgt, p.RunID, a.runDir(tgt.Name, p.RunID))
+	if err != nil {
+		return nil, fmt.Errorf("key: %w", err)
+	}
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: p.SANs[0]}, DNSNames: p.SANs}, key)
+	if err != nil {
+		return nil, err
+	}
+	return agentproto.CSROutput{CSRPEM: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}))}, nil
+}
+
 // setChallenge registers exactly one solver, so lego cannot fall back to
 // another challenge type than the one that was approved.
 func (a *Agent) setChallenge(client *lego.Client, tgt *TargetConfig, t *agentproto.Task, p agentproto.IssuePayload, dns01 bool) error {

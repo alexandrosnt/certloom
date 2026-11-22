@@ -20,6 +20,7 @@ import (
 	"github.com/alexandrosnt/certloom/internal/checks"
 	"github.com/alexandrosnt/certloom/internal/jobs"
 	"github.com/alexandrosnt/certloom/internal/oidcauth"
+	"github.com/alexandrosnt/certloom/internal/privateca"
 	"github.com/alexandrosnt/certloom/internal/probe"
 	"github.com/alexandrosnt/certloom/internal/secret"
 	"github.com/alexandrosnt/certloom/internal/store"
@@ -45,6 +46,9 @@ type Service struct {
 	// PKI is nil when agent support is not configured (no KEK).
 	PKI *agentpki.PKI
 	ARI *ari.Client
+	// CASigner builds the client for a Vault or step-ca issuer; nil uses
+	// NewCASigner. Tests replace it.
+	CASigner func(iss *store.Issuer, credential secret.Value) (privateca.Signer, error)
 	// AgentServerURL is the agent listener URL shown in enrollment commands.
 	AgentServerURL string
 	SessionTTL     time.Duration // default 12h

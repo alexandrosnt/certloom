@@ -15,6 +15,15 @@ Not done yet, roughly in the order I want to tackle it.
 - Distribution through OCI registries (falcoctl style); issuer and notifier plugins on
   the control plane need their own ADR.
 
+## Private CAs
+- Test the ACME issuer against Vault's and step-ca's ACME servers (HTTP-01 from the CA
+  to nginx, EAB on Vault) in `test/acme`; until then only the native path is claimed.
+- Vault: Kubernetes and JWT auth, and the secret_id from a file or Vault Agent instead of
+  the database. step-ca: a root fingerprint instead of a CA bundle, and the X5C and OIDC
+  provisioners.
+- Revocation through Vault and step-ca (none of the issuers revokes yet).
+- Terraform provider and Ansible modules: issuer kind, settings and credential.
+
 ## Renewal
 - No command to change a deployment's issuer (e.g. staging to production); today it
   means recreating the deployment.

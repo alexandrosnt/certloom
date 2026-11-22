@@ -7,6 +7,15 @@
   `os/exec` used instead of the limited `Write`.
 
 ### Added
+- Vault PKI and step-ca issuers (ADR-0028): `certloom issuer create --kind vault|stepca`.
+  The agent makes the key and a CSR (new task `csr.create`); certloomd checks the CSR
+  against the approved deployment and has it signed through Vault `sign/<role>` (AppRole,
+  token revoked after each call, or a fixed token) or a step-ca JWK provisioner. No ACME
+  challenge, so wildcards and unreachable hosts work. The credential is stored under the
+  KEK and never returned (`certloom issuer set-credential`); TLS to the CA trusts only the
+  issuer's CA bundle (`set-ca-bundle`). New run state `signing`. API: `kind`, `settings`,
+  `ca_bundle` and `credential` on issuers, `PUT /api/v1/issuers/{id}/credential`; the Go
+  client has the same fields. `certloom issuer show`.
 - Agent plugins (ADR-0027): one exec + JSON protocol for DNS solvers, deploy targets
   (`type: plugin`: deploy, verify, rollback, inventory) and discovery plugins, with the
   public Go package `github.com/alexandrosnt/certloom/plugin` (`dnsplugin` now wraps it).

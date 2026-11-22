@@ -252,7 +252,8 @@ func (c *Client) DeleteChannel(ctx context.Context, id string) error {
 	return err
 }
 
-// Issuer is an ACME CA account configuration.
+// Issuer is a CA configuration: an ACME directory, or a Vault PKI or
+// step-ca server that signs CSRs through the control plane.
 type Issuer struct {
 	ID           string     `json:"id"`
 	Name         string     `json:"name"`
@@ -265,24 +266,59 @@ type Issuer struct {
 	EABKID       string     `json:"eab_kid,omitempty"`
 	HasEABHMAC   bool       `json:"has_eab_hmac,omitempty"`
 	EABUpdatedAt *time.Time `json:"eab_updated_at,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
+	// Settings, CABundle and HasCredential belong to Vault and step-ca
+	// issuers. The credential itself is never returned.
+	Settings            IssuerSettings `json:"settings,omitzero"`
+	CABundle            string         `json:"ca_bundle,omitempty"`
+	HasCredential       bool           `json:"has_credential,omitempty"`
+	CredentialUpdatedAt *time.Time     `json:"credential_updated_at,omitempty"`
+	CreatedAt           time.Time      `json:"created_at"`
 }
 
-// IssuerInput creates an issuer. AgreeTOS must be true: it records that you
-// accept the CA's terms of service.
+// Issuer kinds.
+const (
+	IssuerACME   = "acme"
+	IssuerVault  = "vault"
+	IssuerStepCA = "stepca"
+)
+
+// IssuerSettings configures a Vault PKI (Mount .. RoleID) or step-ca
+// (Provisioner, KeyID) issuer.
+type IssuerSettings struct {
+	Mount       string `json:"mount,omitempty"`
+	Role        string `json:"role,omitempty"`
+	IssuerRef   string `json:"issuer_ref,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	TTL         string `json:"ttl,omitempty"`
+	AuthMethod  string `json:"auth_method,omitempty"` // approle or token
+	AuthMount   string `json:"auth_mount,omitempty"`
+	RoleID      string `json:"role_id,omitempty"`
+	Provisioner string `json:"provisioner,omitempty"`
+	KeyID       string `json:"key_id,omitempty"`
+}
+
+// IssuerInput creates an issuer. For ACME (Kind empty or IssuerACME),
+// AgreeTOS must be true: it records that you accept the CA's terms of
+// service. Vault and step-ca issuers need CABundle, Settings and Credential
+// (Vault: AppRole secret_id or token; step-ca: the provisioner's private JWK).
 type IssuerInput struct {
-	Name         string `json:"name"`
-	DirectoryURL string `json:"directory_url"`
-	Email        string `json:"email,omitempty"`
-	AgreeTOS     bool   `json:"agree_tos"`
-	Profile      string `json:"profile,omitempty"`
+	Name         string         `json:"name"`
+	Kind         string         `json:"kind,omitempty"`
+	DirectoryURL string         `json:"directory_url"`
+	Email        string         `json:"email,omitempty"`
+	AgreeTOS     bool           `json:"agree_tos"`
+	Profile      string         `json:"profile,omitempty"`
+	Settings     IssuerSettings `json:"settings,omitzero"`
+	CABundle     string         `json:"ca_bundle,omitempty"`
+	Credential   string         `json:"credential,omitempty"`
 }
 
-// IssuerPatch changes an issuer. The directory URL is fixed.
+// IssuerPatch changes an issuer. The kind, URL and settings are fixed.
 type IssuerPatch struct {
-	Name    *string `json:"name,omitempty"`
-	Email   *string `json:"email,omitempty"`
-	Profile *string `json:"profile,omitempty"`
+	Name     *string `json:"name,omitempty"`
+	Email    *string `json:"email,omitempty"`
+	Profile  *string `json:"profile,omitempty"`
+	CABundle *string `json:"ca_bundle,omitempty"`
 }
 
 // ListIssuers lists issuers.
@@ -315,6 +351,15 @@ func (c *Client) UpdateIssuer(ctx context.Context, idOrName string, p IssuerPatc
 func (c *Client) DeleteIssuer(ctx context.Context, idOrName string) error {
 	_, err := c.do(ctx, request{method: http.MethodDelete, path: "/api/v1/issuers/" + ref(idOrName)}, nil)
 	return err
+}
+
+// SetIssuerCredential replaces the credential of a Vault or step-ca issuer.
+// It is encrypted on the server and never returned.
+func (c *Client) SetIssuerCredential(ctx context.Context, idOrName, credential string) (*Issuer, error) {
+	var i Issuer
+	_, err := c.do(ctx, request{method: http.MethodPut, path: "/api/v1/issuers/" + ref(idOrName) + "/credential",
+		body: map[string]string{"credential": credential}}, &i)
+	return &i, err
 }
 
 // dryRunQuery returns the query for plan-only document requests.

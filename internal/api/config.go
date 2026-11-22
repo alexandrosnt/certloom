@@ -147,15 +147,16 @@ func (s *Server) getIssuer(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) patchIssuer(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
-		Name    *string `json:"name"`
-		Email   *string `json:"email"`
-		Profile *string `json:"profile"`
+		Name     *string `json:"name"`
+		Email    *string `json:"email"`
+		Profile  *string `json:"profile"`
+		CABundle *string `json:"ca_bundle"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
 	}
 	v, err := s.Svc.UpdateIssuer(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"), app.IssuerPatch{Name: req.Name,
-		Email: req.Email, Profile: req.Profile})
+		Email: req.Email, Profile: req.Profile, CABundle: req.CABundle})
 	if err != nil {
 		return err
 	}

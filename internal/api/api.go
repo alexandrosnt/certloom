@@ -145,6 +145,7 @@ func (s *Server) Handler() http.Handler {
 	h("PATCH /api/v1/issuers/{id}", s.patchIssuer)
 	h("DELETE /api/v1/issuers/{id}", s.deleteIssuer)
 	h("PUT /api/v1/issuers/{id}/eab", s.setIssuerEAB)
+	h("PUT /api/v1/issuers/{id}/credential", s.setIssuerCredential)
 	h("GET /api/v1/issuers/{id}/eab-keys", s.listEABKeys)
 	h("POST /api/v1/issuers/{id}/eab-keys", s.addEABKey)
 	h("DELETE /api/v1/issuers/{id}/eab-keys/{key}", s.deleteEABKey)
@@ -965,17 +966,22 @@ func (s *Server) listIssuers(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) createIssuer(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
-		Name         string `json:"name"`
-		DirectoryURL string `json:"directory_url"`
-		Email        string `json:"email,omitempty"`
-		AgreeTOS     bool   `json:"agree_tos"`
-		Profile      string `json:"profile,omitempty"`
+		Name         string               `json:"name"`
+		Kind         string               `json:"kind,omitempty"`
+		DirectoryURL string               `json:"directory_url"`
+		Email        string               `json:"email,omitempty"`
+		AgreeTOS     bool                 `json:"agree_tos"`
+		Profile      string               `json:"profile,omitempty"`
+		Settings     store.IssuerSettings `json:"settings"`
+		CABundle     string               `json:"ca_bundle,omitempty"`
+		Credential   string               `json:"credential,omitempty"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
 	}
-	i := &store.Issuer{Name: req.Name, DirectoryURL: req.DirectoryURL, Email: req.Email, AgreeTOS: req.AgreeTOS, Profile: req.Profile}
-	if err := s.Svc.CreateIssuer(r.Context(), PrincipalFrom(r.Context()), i); err != nil {
+	i := &store.Issuer{Name: req.Name, Kind: req.Kind, DirectoryURL: req.DirectoryURL, Email: req.Email, AgreeTOS: req.AgreeTOS,
+		Profile: req.Profile, Settings: req.Settings, CABundle: req.CABundle}
+	if err := s.Svc.CreateIssuer(r.Context(), PrincipalFrom(r.Context()), i, secret.FromString(req.Credential)); err != nil {
 		return err
 	}
 	writeJSON(w, 201, i)

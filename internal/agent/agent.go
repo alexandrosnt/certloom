@@ -189,6 +189,7 @@ func New(cfg *Config, log *slog.Logger) (*Agent, error) {
 		agentproto.TaskDeploy:        a.handleDeploy,
 		agentproto.TaskVerify:        a.handleVerify,
 		agentproto.TaskRollback:      a.handleRollback,
+		agentproto.TaskCSR:           a.handleCSR,
 	}
 	return a, nil
 }

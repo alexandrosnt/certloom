@@ -291,12 +291,14 @@ func channelNotInPolicy(ctx context.Context, tx *store.Tx, name string) error {
 
 // ---------- issuers ----------
 
-// IssuerPatch changes an issuer. The directory URL and terms-of-service
-// decision are fixed; a different CA is a new issuer.
+// IssuerPatch changes an issuer. The kind, URL, settings and terms-of-service
+// decision are fixed; a different CA is a new issuer. Email and profile are
+// ACME settings; the CA bundle (rotated CA roots) belongs to the other kinds.
 type IssuerPatch struct {
-	Name    *string
-	Email   *string
-	Profile *string
+	Name     *string
+	Email    *string
+	Profile  *string
+	CABundle *string
 }
 
 // GetIssuer returns an issuer by id or name.
@@ -314,13 +316,26 @@ func (s *Service) UpdateIssuer(ctx context.Context, p authz.Principal, ref strin
 		if i, err = tx.GetIssuer(ctx, ref); err != nil {
 			return err
 		}
+		if i.Native() && (in.Email != nil || in.Profile != nil) {
+			return invalid("email and profile belong to ACME issuers")
+		}
+		if !i.Native() && in.CABundle != nil {
+			return invalid("ca_bundle belongs to vault and stepca issuers; ACME issuers use the system roots")
+		}
 		setIf(&i.Name, in.Name)
 		setIf(&i.Email, in.Email)
 		setIf(&i.Profile, in.Profile)
+		if in.CABundle != nil {
+			if err := checkCABundle(*in.CABundle); err != nil {
+				return err
+			}
+			i.CABundle = *in.CABundle
+		}
 		if err := tx.UpdateIssuer(ctx, i); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, p, "issuers.update", "issuer", i.ID, map[string]any{"name": i.Name, "profile": i.Profile})
+		return s.audit(ctx, tx, p, "issuers.update", "issuer", i.ID, map[string]any{"name": i.Name, "profile": i.Profile,
+			"ca_bundle_changed": in.CABundle != nil})
 	})
 	return i, err
 }

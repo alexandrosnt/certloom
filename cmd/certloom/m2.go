@@ -60,34 +60,126 @@ func agentCmd() *cobra.Command {
 }
 
 func issuerCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "issuer", Short: "ACME issuers"}
-	var dir, email, profile string
+	cmd := &cobra.Command{Use: "issuer", Short: "Issuers: ACME CAs, Vault PKI and step-ca"}
+	var kind, dir, caURL, caFile, email, profile string
 	var agree bool
-	create := &cobra.Command{Use: "create NAME", Short: "Register an ACME issuer (owner)", Args: cobra.ExactArgs(1), RunE: run(func(c *client, args []string) error {
-		if !agree {
-			return &usageError{"you must read and accept the CA's terms of service: pass --agree-tos"}
-		}
-		return postAndPrint(c, "POST", "/api/v1/issuers", map[string]any{"name": args[0], "directory_url": dir, "email": email,
-			"agree_tos": agree, "profile": profile}, func(raw json.RawMessage) {
-			var i struct{ ID string }
-			_ = json.Unmarshal(raw, &i)
-			fmt.Printf("Created issuer %s (%s).\n", args[0], i.ID)
-		})
-	})}
-	create.Flags().StringVar(&dir, "directory", "", "ACME directory URL, e.g. https://acme-staging-v02.api.letsencrypt.org/directory")
-	create.Flags().StringVar(&email, "email", "", "account contact email (optional)")
-	create.Flags().StringVar(&profile, "profile", "", "ACME profile, e.g. shortlived (optional)")
-	create.Flags().BoolVar(&agree, "agree-tos", false, "accept the CA's terms of service")
-	_ = create.MarkFlagRequired("directory")
-	cmd.AddCommand(create, listCmd("list", "List issuers", "/api/v1/issuers", "ID\tNAME\tDIRECTORY\tPROFILE\tEAB",
+	var st struct{ mount, role, issuerRef, namespace, ttl, auth, authMount, roleID, provisioner, keyID string }
+	var cf credFlags
+	create := &cobra.Command{Use: "create NAME", Short: "Register an issuer (issuers:manage)",
+		Long: `Register an issuer.
+
+ACME (default): certloom-agent orders from the CA's directory.
+  certloom issuer create le --directory https://acme-v02.api.letsencrypt.org/directory --agree-tos
+
+Vault PKI and step-ca (ADR-0028): the agent makes the key and a CSR, and the
+control plane has the CSR signed. The credential is read from a file or stdin,
+stored encrypted and never shown again.
+  certloom issuer create vault --kind vault --url https://vault:8200 --ca-file vault-ca.pem \
+    --mount pki_int --role web --auth approle --role-id ROLE_ID --credential-file secret_id
+  certloom issuer create step --kind stepca --url https://ca:9000 --ca-file root_ca.crt \
+    --provisioner certloom --credential-file provisioner.jwk`,
+		Args: cobra.ExactArgs(1), RunE: run(func(c *client, args []string) error {
+			body := map[string]any{"name": args[0], "kind": kind}
+			switch kind {
+			case "acme":
+				if dir == "" {
+					return &usageError{"an ACME issuer needs --directory"}
+				}
+				if !agree {
+					return &usageError{"you must read and accept the CA's terms of service: pass --agree-tos"}
+				}
+				body["directory_url"], body["email"], body["agree_tos"], body["profile"] = dir, email, agree, profile
+			case "vault", "stepca":
+				if caURL == "" || caFile == "" {
+					return &usageError{"a " + kind + " issuer needs --url and --ca-file"}
+				}
+				bundle, err := os.ReadFile(caFile)
+				if err != nil {
+					return err
+				}
+				cred, err := cf.read()
+				if err != nil {
+					return err
+				}
+				if cred == "" {
+					return &usageError{"pass --credential-file or --credential-stdin"}
+				}
+				body["directory_url"], body["ca_bundle"], body["credential"] = caURL, string(bundle), cred
+				body["settings"] = map[string]string{"mount": st.mount, "role": st.role, "issuer_ref": st.issuerRef, "namespace": st.namespace,
+					"ttl": st.ttl, "auth_method": st.auth, "auth_mount": st.authMount, "role_id": st.roleID,
+					"provisioner": st.provisioner, "key_id": st.keyID}
+			default:
+				return &usageError{"--kind must be acme, vault or stepca"}
+			}
+			return postAndPrint(c, "POST", "/api/v1/issuers", body, func(raw json.RawMessage) {
+				var i struct{ ID string }
+				_ = json.Unmarshal(raw, &i)
+				fmt.Printf("Created issuer %s (%s).\n", args[0], i.ID)
+			})
+		})}
+	f := create.Flags()
+	f.StringVar(&kind, "kind", "acme", "acme, vault or stepca")
+	f.StringVar(&dir, "directory", "", "acme: directory URL, e.g. https://acme-staging-v02.api.letsencrypt.org/directory")
+	f.StringVar(&email, "email", "", "acme: account contact email (optional)")
+	f.StringVar(&profile, "profile", "", "acme: profile, e.g. shortlived (optional)")
+	f.BoolVar(&agree, "agree-tos", false, "acme: accept the CA's terms of service")
+	f.StringVar(&caURL, "url", "", "vault, stepca: base URL, e.g. https://vault.example:8200")
+	f.StringVar(&caFile, "ca-file", "", "vault, stepca: PEM roots trusted for TLS to the CA")
+	f.StringVar(&st.mount, "mount", "", "vault: PKI mount, e.g. pki_int")
+	f.StringVar(&st.role, "role", "", "vault: PKI role to sign with")
+	f.StringVar(&st.issuerRef, "issuer-ref", "", "vault: issuer to sign with (default: the mount's default issuer)")
+	f.StringVar(&st.namespace, "namespace", "", "vault: namespace (Enterprise/HCP)")
+	f.StringVar(&st.ttl, "ttl", "", "vault: certificate TTL, e.g. 720h (default: the role's)")
+	f.StringVar(&st.auth, "auth", "", "vault: approle or token")
+	f.StringVar(&st.authMount, "auth-mount", "", "vault: AppRole mount (default approle)")
+	f.StringVar(&st.roleID, "role-id", "", "vault: AppRole role_id (the credential is the secret_id)")
+	f.StringVar(&st.provisioner, "provisioner", "", "stepca: JWK provisioner name")
+	f.StringVar(&st.keyID, "key-id", "", "stepca: provisioner key id (default: the JWK's kid)")
+	cf.add(create)
+
+	var scf credFlags
+	setCred := &cobra.Command{Use: "set-credential ISSUER", Short: "Replace a vault or stepca issuer's credential (issuers:manage)",
+		Args: cobra.ExactArgs(1), RunE: run(func(c *client, args []string) error {
+			cred, err := scf.read()
+			if err != nil {
+				return err
+			}
+			if cred == "" {
+				return &usageError{"pass --credential-file or --credential-stdin"}
+			}
+			return postAndPrint(c, "PUT", "/api/v1/issuers/"+url.PathEscape(args[0])+"/credential", map[string]string{"credential": cred},
+				func(json.RawMessage) { fmt.Printf("Credential of issuer %s replaced.\n", args[0]) })
+		})}
+	scf.add(setCred)
+
+	setCA := &cobra.Command{Use: "set-ca-bundle ISSUER FILE", Short: "Replace the roots trusted for TLS to a vault or stepca issuer",
+		Args: cobra.ExactArgs(2), RunE: run(func(c *client, args []string) error {
+			b, err := os.ReadFile(args[1])
+			if err != nil {
+				return err
+			}
+			return postAndPrint(c, "PATCH", "/api/v1/issuers/"+url.PathEscape(args[0]), map[string]string{"ca_bundle": string(b)},
+				func(json.RawMessage) { fmt.Printf("CA bundle of issuer %s replaced.\n", args[0]) })
+		})}
+
+	show := &cobra.Command{Use: "show ISSUER", Short: "Show an issuer (never its credential or EAB key)", Args: cobra.ExactArgs(1),
+		RunE: run(func(c *client, args []string) error {
+			var raw json.RawMessage
+			if err := c.do("GET", "/api/v1/issuers/"+url.PathEscape(args[0]), nil, &raw); err != nil {
+				return err
+			}
+			return printJSON(raw)
+		})}
+
+	cmd.AddCommand(create, show, setCred, setCA, listCmd("list", "List issuers", "/api/v1/issuers", "ID\tNAME\tKIND\tURL\tPROFILE\tEAB",
 		func(w io.Writer, raw json.RawMessage) {
 			var i struct {
-				ID, Name, Profile string
-				Dir               string `json:"directory_url"`
-				EAB               string `json:"eab_mode"`
+				ID, Name, Kind, Profile string
+				Dir                     string `json:"directory_url"`
+				EAB                     string `json:"eab_mode"`
 			}
 			_ = json.Unmarshal(raw, &i)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", i.ID, i.Name, i.Dir, i.Profile, i.EAB)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", i.ID, i.Name, i.Kind, i.Dir, i.Profile, i.EAB)
 		}))
 	cmd.AddCommand(issuerEABCmds()...)
 	return cmd

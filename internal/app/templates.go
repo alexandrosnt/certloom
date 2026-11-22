@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/alexandrosnt/certloom/internal/agentproto"
 	"github.com/alexandrosnt/certloom/internal/authz"
 	"github.com/alexandrosnt/certloom/internal/certtemplate"
 	"github.com/alexandrosnt/certloom/internal/store"
@@ -95,6 +96,9 @@ func (s *Service) ApplyTemplate(ctx context.Context, p authz.Principal, src []by
 		for _, d := range deps {
 			var problems []string
 			r := resolved{issuer: iss, challenge: doc.Spec.Challenge, keyAlg: d.KeyAlgorithm}
+			if iss.Native() {
+				r.challenge = agentproto.ChallengeNone
+			}
 			if !slices.Contains(doc.Spec.KeyAlgorithms, d.KeyAlgorithm) {
 				problems = append(problems, fmt.Sprintf("key algorithm %s is no longer allowed", d.KeyAlgorithm))
 			}

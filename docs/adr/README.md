@@ -37,3 +37,4 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0025](0025-terraform-provider.md) | Terraform/OpenTofu provider and public Go client | Accepted |
 | [0026](0026-ansible-collection.md) | Ansible collection | Accepted |
 | [0027](0027-plugin-sdk.md) | Out-of-process plugins with signed packages | Accepted |
+| [0028](0028-private-ca-issuers.md) | Vault PKI and step-ca issuers | Accepted |

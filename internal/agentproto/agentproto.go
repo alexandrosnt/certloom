@@ -31,10 +31,13 @@ const (
 	TaskDeploy        = "deploy.activate"
 	TaskVerify        = "verify.local"
 	TaskRollback      = "deploy.rollback"
+	// TaskCSR makes the run's key and returns a CSR for the control plane to
+	// have signed by a Vault or step-ca issuer (ADR-0028).
+	TaskCSR = "csr.create"
 )
 
 // AllTaskTypes lists every known task type.
-var AllTaskTypes = []string{TaskInventoryScan, TaskIssue, TaskDeploy, TaskVerify, TaskRollback}
+var AllTaskTypes = []string{TaskInventoryScan, TaskIssue, TaskDeploy, TaskVerify, TaskRollback, TaskCSR}
 
 // AgentURI is the URI SAN identifying an agent in its client certificate.
 func AgentURI(orgID, agentID string) *url.URL {
@@ -257,6 +260,20 @@ type IssuePayload struct {
 	AccountSlot string `json:"account_slot,omitempty"`
 	// EAB is sent while the agent has not registered AccountSlot (ADR-0019).
 	EAB *SealedEAB `json:"eab,omitempty"`
+}
+
+// CSRPayload asks for a CSR covering SANs, signed by a new key kept in the
+// run directory for the deploy step.
+type CSRPayload struct {
+	RunID string   `json:"run_id"`
+	SANs  []string `json:"sans"`
+	// KeyAlgorithm is the key to generate; empty means KeyECDSAP256.
+	KeyAlgorithm string `json:"key_algorithm,omitempty"`
+}
+
+// CSROutput carries the PEM CSR. The private key stays on the host.
+type CSROutput struct {
+	CSRPEM string `json:"csr_pem"`
 }
 
 // SealedEAB is an External Account Binding key: the key id in clear and the
@@ -533,6 +550,8 @@ type CertbotLineage struct {
 const (
 	ChallengeHTTP01 = "http-01"
 	ChallengeDNS01  = "dns-01"
+	// ChallengeNone is used with issuers that sign a CSR without ACME.
+	ChallengeNone = "none"
 )
 
 // SANAllowed matches a SAN against an allowlist. An entry matches itself, and

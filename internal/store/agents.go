@@ -239,11 +239,21 @@ func (tx *Tx) GetTask(ctx context.Context, id string) (*AgentTask, error) {
 
 // ---------- issuers ----------
 
-// Issuer is an ACME CA configuration.
+// Issuer kinds. ACME issuers are ordered from by the agent; the others sign
+// a CSR from the agent through the control plane (ADR-0028).
+const (
+	IssuerACME   = "acme"
+	IssuerVault  = "vault"
+	IssuerStepCA = "stepca"
+)
+
+// Issuer is a CA configuration.
 type Issuer struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Kind         string    `json:"kind"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	// DirectoryURL is the ACME directory, or the CA's base URL for the
+	// native kinds.
 	DirectoryURL string    `json:"directory_url"`
 	Email        string    `json:"email,omitempty"`
 	AgreeTOS     bool      `json:"agree_tos"`
@@ -254,32 +264,82 @@ type Issuer struct {
 	EABKID       string     `json:"eab_kid,omitempty"`
 	HasEABHMAC   bool       `json:"has_eab_hmac,omitempty"`
 	EABUpdatedAt *time.Time `json:"eab_updated_at,omitempty"`
+	// Settings, CABundle and the credential belong to the native kinds.
+	Settings            IssuerSettings `json:"settings,omitzero"`
+	CABundle            string         `json:"ca_bundle,omitempty"`
+	HasCredential       bool           `json:"has_credential,omitempty"`
+	CredentialUpdatedAt *time.Time     `json:"credential_updated_at,omitempty"`
 
-	EABHMACCiphertext []byte `json:"-"`
+	EABHMACCiphertext    []byte `json:"-"`
+	CredentialCiphertext []byte `json:"-"`
 }
 
-const issuerCols = `id, name, kind, directory_url, email, agree_tos, profile, created_at, eab_mode, eab_kid, eab_hmac_ciphertext, eab_updated_at`
+// Native reports whether the control plane signs for this issuer.
+func (i *Issuer) Native() bool { return i.Kind == IssuerVault || i.Kind == IssuerStepCA }
+
+// IssuerSettings are the non-secret settings of a Vault or step-ca issuer.
+type IssuerSettings struct {
+	// Vault: PKI mount, role, optional issuer reference and namespace, the
+	// auth method (approle or token) and, for approle, its mount and role id.
+	Mount      string `json:"mount,omitempty"`
+	Role       string `json:"role,omitempty"`
+	IssuerRef  string `json:"issuer_ref,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	TTL        string `json:"ttl,omitempty"`
+	AuthMethod string `json:"auth_method,omitempty"`
+	AuthMount  string `json:"auth_mount,omitempty"`
+	RoleID     string `json:"role_id,omitempty"`
+	// step-ca: the JWK provisioner and its key id.
+	Provisioner string `json:"provisioner,omitempty"`
+	KeyID       string `json:"key_id,omitempty"`
+}
+
+const issuerCols = `id, name, kind, directory_url, email, agree_tos, profile, created_at, eab_mode, eab_kid, eab_hmac_ciphertext, eab_updated_at,
+	settings, ca_bundle, credential_ciphertext, credential_updated_at`
 
 func scanIssuer(r pgx.Row) (*Issuer, error) {
 	i := &Issuer{}
 	err := r.Scan(&i.ID, &i.Name, &i.Kind, &i.DirectoryURL, &i.Email, &i.AgreeTOS, &i.Profile, &i.CreatedAt,
-		&i.EABMode, &i.EABKID, &i.EABHMACCiphertext, &i.EABUpdatedAt)
+		&i.EABMode, &i.EABKID, &i.EABHMACCiphertext, &i.EABUpdatedAt,
+		&i.Settings, &i.CABundle, &i.CredentialCiphertext, &i.CredentialUpdatedAt)
 	i.HasEABHMAC = len(i.EABHMACCiphertext) > 0
+	i.HasCredential = len(i.CredentialCiphertext) > 0
 	return i, err
 }
 
-// CreateIssuer inserts an issuer.
+// CreateIssuer inserts an issuer. An empty Kind means ACME.
 func (tx *Tx) CreateIssuer(ctx context.Context, i *Issuer, createdBy string) error {
-	i.ID, i.Kind = ids.New("iss"), "acme"
-	return conflict(tx.QueryRow(ctx, `INSERT INTO issuers (id, org_id, name, kind, directory_url, email, agree_tos, profile, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING created_at, eab_mode`, i.ID, tx.OrgID, i.Name, i.Kind, i.DirectoryURL, i.Email, i.AgreeTOS, i.Profile, createdBy).
-		Scan(&i.CreatedAt, &i.EABMode))
+	if i.ID == "" {
+		i.ID = ids.New("iss")
+	}
+	if i.Kind == "" {
+		i.Kind = IssuerACME
+	}
+	err := tx.QueryRow(ctx, `INSERT INTO issuers (id, org_id, name, kind, directory_url, email, agree_tos, profile, created_by,
+		settings, ca_bundle, credential_ciphertext, credential_updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, CASE WHEN $12::bytea IS NULL THEN NULL ELSE now() END)
+		RETURNING created_at, eab_mode, credential_updated_at`, i.ID, tx.OrgID, i.Name, i.Kind, i.DirectoryURL, i.Email, i.AgreeTOS, i.Profile, createdBy,
+		i.Settings, i.CABundle, i.CredentialCiphertext).
+		Scan(&i.CreatedAt, &i.EABMode, &i.CredentialUpdatedAt)
+	i.HasCredential = len(i.CredentialCiphertext) > 0
+	return conflict(err)
 }
 
-// UpdateIssuer changes an issuer's name, contact email and profile. The
-// directory URL and terms-of-service decision are fixed at creation.
+// SetIssuerCredential replaces the stored credential of a native issuer.
+func (tx *Tx) SetIssuerCredential(ctx context.Context, id string, ciphertext []byte) error {
+	tag, err := tx.Exec(ctx, `UPDATE issuers SET credential_ciphertext = $2, credential_updated_at = now() WHERE id = $1`, id, ciphertext)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// UpdateIssuer changes an issuer's name, contact email, profile and CA
+// bundle. The kind, URL, settings and terms-of-service decision are fixed at
+// creation, because the approved deployment spec covers them.
 func (tx *Tx) UpdateIssuer(ctx context.Context, i *Issuer) error {
-	tag, err := tx.Exec(ctx, `UPDATE issuers SET name = $2, email = $3, profile = $4 WHERE id = $1`, i.ID, i.Name, i.Email, i.Profile)
+	tag, err := tx.Exec(ctx, `UPDATE issuers SET name = $2, email = $3, profile = $4, ca_bundle = $5 WHERE id = $1`,
+		i.ID, i.Name, i.Email, i.Profile, i.CABundle)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -430,8 +490,11 @@ func (tx *Tx) SetRenewal(ctx context.Context, id string, at time.Time, reason st
 
 // Run states (docs/domain-model.md).
 const (
-	RunPlanned        = "planned"
-	RunIssuing        = "issuing"
+	RunPlanned = "planned"
+	RunIssuing = "issuing"
+	// RunSigning: the agent returned a CSR and the control plane is having
+	// it signed by a Vault or step-ca issuer (ADR-0028).
+	RunSigning        = "signing"
 	RunIssued         = "issued"
 	RunDeploying      = "deploying"
 	RunVerifying      = "verifying"

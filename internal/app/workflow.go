@@ -15,7 +15,9 @@ import (
 	"github.com/alexandrosnt/certloom/internal/ari"
 	"github.com/alexandrosnt/certloom/internal/authz"
 	"github.com/alexandrosnt/certloom/internal/certparse"
+	"github.com/alexandrosnt/certloom/internal/ids"
 	"github.com/alexandrosnt/certloom/internal/jobs"
+	"github.com/alexandrosnt/certloom/internal/privateca"
 	"github.com/alexandrosnt/certloom/internal/probe"
 	"github.com/alexandrosnt/certloom/internal/secret"
 	"github.com/alexandrosnt/certloom/internal/store"
@@ -41,25 +43,48 @@ const workflowActor = "system:workflow"
 
 // ---------- issuers ----------
 
-// CreateIssuer registers an ACME issuer. Agreeing to the CA's terms of
-// service is an explicit, audited owner decision.
-func (s *Service) CreateIssuer(ctx context.Context, p authz.Principal, i *store.Issuer) error {
-	u, err := url.Parse(i.DirectoryURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" {
-		return invalid("directory_url must be an https URL")
-	}
+// CreateIssuer registers an issuer. For ACME, agreeing to the CA's terms of
+// service is an explicit, audited owner decision. Vault and step-ca issuers
+// need cred (ADR-0028), which is stored under the KEK and never returned.
+func (s *Service) CreateIssuer(ctx context.Context, p authz.Principal, i *store.Issuer, cred secret.Value) error {
 	if strings.TrimSpace(i.Name) == "" {
 		return invalid("issuer name is required")
 	}
-	if !i.AgreeTOS {
-		return invalid("agree_tos must be true: you must accept the CA's terms of service to use it")
+	if i.Kind == "" {
+		i.Kind = store.IssuerACME
+	}
+	if i.Kind == store.IssuerACME {
+		u, err := url.Parse(i.DirectoryURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" {
+			return invalid("directory_url must be an https URL")
+		}
+		if !i.AgreeTOS {
+			return invalid("agree_tos must be true: you must accept the CA's terms of service to use it")
+		}
+		if !cred.IsEmpty() || i.CABundle != "" || i.Settings != (store.IssuerSettings{}) {
+			return invalid("credential, ca_bundle and settings belong to vault and stepca issuers")
+		}
+	} else {
+		if err := checkNativeIssuer(i, cred); err != nil {
+			return err
+		}
+		if s.PKI == nil {
+			return ErrAgentsDisabled
+		}
 	}
 	return s.tx(ctx, p, authz.ManageIssuers, func(tx *store.Tx) error {
+		i.ID = ids.New("iss")
+		if !cred.IsEmpty() {
+			var err error
+			if i.CredentialCiphertext, err = s.PKI.KEK.Seal(cred.Reveal(), issuerCredentialAAD(i.ID)); err != nil {
+				return err
+			}
+		}
 		if err := tx.CreateIssuer(ctx, i, p.Actor); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, p, "issuers.create", "issuer", i.ID, map[string]any{"name": i.Name, "directory_url": i.DirectoryURL,
-			"agree_tos": i.AgreeTOS, "profile": i.Profile})
+		return s.audit(ctx, tx, p, "issuers.create", "issuer", i.ID, map[string]any{"name": i.Name, "kind": i.Kind, "directory_url": i.DirectoryURL,
+			"agree_tos": i.AgreeTOS, "profile": i.Profile, "settings": i.Settings, "credential": !cred.IsEmpty()})
 	})
 }
 
@@ -108,10 +133,21 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 		if err := checkWindow(in.Window, in.Emergency); err != nil {
 			return err
 		}
-		if in.Challenge == "" {
-			in.Challenge = agentproto.ChallengeHTTP01
+		iss, err := tx.GetIssuer(ctx, in.Issuer)
+		if err != nil {
+			return invalid("issuer %q not found", in.Issuer)
 		}
-		if in.Challenge != agentproto.ChallengeHTTP01 && in.Challenge != agentproto.ChallengeDNS01 {
+		native := iss.Native()
+		switch {
+		case native && (in.Challenge == "" || in.Challenge == agentproto.ChallengeNone || tpl != nil):
+			// The control plane signs a CSR; there is no ACME challenge. A
+			// template's challenge only applies to ACME issuers.
+			in.Challenge = agentproto.ChallengeNone
+		case native:
+			return invalid("issuer %s signs CSRs (kind %s); challenge %s does not apply", iss.Name, iss.Kind, in.Challenge)
+		case in.Challenge == "":
+			in.Challenge = agentproto.ChallengeHTTP01
+		case in.Challenge != agentproto.ChallengeHTTP01 && in.Challenge != agentproto.ChallengeDNS01:
 			return invalid("challenge must be http-01 or dns-01")
 		}
 		if in.KeyAlgorithm == "" {
@@ -141,6 +177,9 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 		if tgt.Type == agentproto.TargetPlugin && !a.Capabilities.HasPlugin(tgt.Plugin, agentproto.PluginKindDeployTarget) {
 			return invalid("target %q uses plugin %q, which agent %q does not report as installed and trusted for deploy_target (see certloom agent plugins)", in.Target, tgt.Plugin, a.Name)
 		}
+		if native && !slices.Contains(a.Capabilities.Tasks, agentproto.TaskCSR) {
+			return invalid("issuer %s needs agent %q to create CSRs (task %s), which it does not report: upgrade the agent or allow the task", iss.Name, a.Name, agentproto.TaskCSR)
+		}
 		if dns01 && len(a.Capabilities.DNSSolvers) == 0 {
 			central, err := tx.ListDNSSolvers(ctx, a.ID)
 			if err != nil {
@@ -151,16 +190,12 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 			}
 		}
 		for _, san := range in.SANs {
-			if strings.HasPrefix(san, "*") && !dns01 {
+			if strings.HasPrefix(san, "*") && !dns01 && !native {
 				return invalid("wildcard SAN %q needs challenge dns-01", san)
 			}
-			if !SANAllowed(san, tgt.AllowedSANs, dns01) {
+			if !SANAllowed(san, tgt.AllowedSANs, dns01 || native) {
 				return invalid("SAN %q is not in target %q's allowed_sans (a wildcard must be listed literally)", san, in.Target)
 			}
-		}
-		iss, err := tx.GetIssuer(ctx, in.Issuer)
-		if err != nil {
-			return invalid("issuer %q not found", in.Issuer)
 		}
 		d = &store.Deployment{LineageID: l.ID, AgentID: a.ID, Target: in.Target, IssuerID: iss.ID, SANs: in.SANs,
 			MaintenanceWindow: normWindow(in.Window), WindowEmergency: in.Emergency, Challenge: in.Challenge}
@@ -302,7 +337,7 @@ func (s *Service) CancelRun(ctx context.Context, p authz.Principal, id string) e
 			return err
 		}
 		switch r.State {
-		case store.RunPlanned, store.RunIssuing, store.RunIssued, store.RunRetryScheduled, store.RunWaitingWindow, store.RunBlocked:
+		case store.RunPlanned, store.RunIssuing, store.RunSigning, store.RunIssued, store.RunRetryScheduled, store.RunWaitingWindow, store.RunBlocked:
 		default:
 			return invalid("cannot cancel a run in state %q", r.State)
 		}
@@ -437,7 +472,9 @@ func (s *Service) RunARICheck(ctx context.Context, j jobs.Job) error {
 		if err != nil {
 			return err
 		}
-		dirURL = iss.DirectoryURL
+		if !iss.Native() {
+			dirURL = iss.DirectoryURL // only ACME has renewal information
+		}
 		checked = l.CurrentSHA256
 		if l.CurrentSHA256 != nil {
 			c, err := tx.GetCertificate(ctx, *l.CurrentSHA256)
@@ -464,6 +501,9 @@ func (s *Service) RunARICheck(ctx context.Context, j jobs.Job) error {
 			client = &ari.Client{}
 		}
 		w, ferr := func() (*ari.Window, error) {
+			if dirURL == "" {
+				return nil, errors.New("issuer has no ARI")
+			}
 			u, err := client.RenewalInfoURL(ctx, dirURL)
 			if err != nil {
 				return nil, err
@@ -535,6 +575,9 @@ func (s *Service) RunAdvance(ctx context.Context, j jobs.Job) error {
 	if err != nil {
 		return err
 	}
+	if external.sign, err = s.externalSign(ctx, j.OrgID, pl.RunID); err != nil {
+		return err
+	}
 	return s.DB.WithOrg(ctx, j.OrgID, func(tx *store.Tx) error {
 		if err := jobs.Fence(ctx, tx, j); err != nil {
 			return err
@@ -551,6 +594,8 @@ type externalResult struct {
 	checked bool
 	served  string
 	err     string
+	// sign is set when the run was signing and the issuer was called.
+	sign *signResult
 }
 
 func (s *Service) externalVerify(ctx context.Context, org, runID string) (externalResult, error) {
@@ -660,6 +705,22 @@ func (s *Service) advance(ctx context.Context, tx *store.Tx, runID string, ext e
 			case "pending", "delivered":
 				return nil // waiting for the agent
 			case "succeeded":
+				if t.Type == agentproto.TaskCSR {
+					var out agentproto.CSROutput
+					_ = json.Unmarshal(t.Result, &out)
+					if _, err := privateca.CheckCSR(out.CSRPEM, d.SANs, d.KeyAlgorithm); err != nil {
+						// Never sent to the CA. The agent made this CSR, so asking again would not help.
+						return s.finish(ctx, tx, r, d, store.RunFailed, "agent CSR rejected: "+err.Error())
+					}
+					r.State = store.RunSigning
+					if err := tx.UpdateRun(ctx, r, "CSR received and checked; signing with the issuer"); err != nil {
+						return err
+					}
+					// The CA is called outside this transaction, by the next advance.
+					_, err := jobs.Enqueue(ctx, tx, tx.OrgID, JobKindAdvance, fmt.Sprintf("%s:sign:%d", r.ID, r.Attempt),
+						map[string]string{"run_id": r.ID}, time.Time{})
+					return err
+				}
 				var out agentproto.IssueOutput
 				_ = json.Unmarshal(t.Result, &out)
 				if out.AccountSlot != "" {
@@ -667,21 +728,11 @@ func (s *Service) advance(ctx context.Context, tx *store.Tx, runID string, ext e
 						return err
 					}
 				}
-				leaf, err := s.acceptIssued(ctx, tx, d, out.ChainPEM)
-				if err != nil {
-					// A bad certificate is never deployed. Retrying would order again.
-					return s.finish(ctx, tx, r, d, store.RunFailed, "issued certificate rejected: "+err.Error())
-				}
-				r.IssuedSHA256, r.State, r.CurrentTaskID = &leaf, store.RunIssued, nil
-				if err := tx.UpdateRun(ctx, r, "certificate "+leaf[:16]+" issued and recorded (checkpoint)"); err != nil {
+				if err := s.recordIssued(ctx, tx, r, d, out.ChainPEM); err != nil {
 					return err
 				}
-				if err := s.systemAudit(ctx, tx, workflowActor, "renewals.issued", "run", r.ID, map[string]any{"sha256": leaf}); err != nil {
-					return err
-				}
-				if err := s.emit(ctx, tx, "certificate.issued", r.ID, map[string]any{"sha256": leaf, "run_id": r.ID, "deployment_id": d.ID,
-					"lineage_id": d.LineageID, "issuer_id": d.IssuerID, "sans": d.SANs}); err != nil {
-					return err
+				if store.Terminal(r.State) {
+					return nil
 				}
 			default: // failed or expired
 				var out agentproto.IssueOutput
@@ -699,26 +750,33 @@ func (s *Service) advance(ctx context.Context, tx *store.Tx, runID string, ext e
 					return s.finish(ctx, tx, r, d, store.RunFailed, "the CA refused ACME account registration (External Account Binding): "+t.Error)
 				}
 				wait, detail, rateLimited := retryAfter(out)
-				if r.Attempt >= maxIssueAttempt && !rateLimited {
-					return s.finish(ctx, tx, r, d, store.RunFailed, fmt.Sprintf("issuance failed after %d attempts: %s", r.Attempt, t.Error))
-				}
-				if rateLimited {
-					// The CA told us when to come back; waiting for it does
-					// not use up one of the run's attempts.
-					r.Attempt--
-				}
-				next := s.now().Add(max(wait, jobs.Backoff(r.Attempt, 2*time.Minute, time.Hour)))
-				r.State, r.NextAttemptAt, r.CurrentTaskID, r.Error = store.RunRetryScheduled, &next, nil, t.Error
-				if err := tx.UpdateRun(ctx, r, "issuance attempt failed"+detail+"; retry at "+next.UTC().Format(time.RFC3339)+": "+t.Error); err != nil {
-					return err
-				}
-				if rateLimited {
-					if err := s.notifyRun(ctx, tx, r, "renewal.rate_limited", "warning", "the CA rate-limited issuance; next attempt at "+next.UTC().Format(time.RFC3339)); err != nil {
-						return err
-					}
-				}
-				_, err := jobs.Enqueue(ctx, tx, tx.OrgID, JobKindAdvance, r.ID+":retry", map[string]string{"run_id": r.ID}, next)
+				return s.retryIssue(ctx, tx, r, d, t.Error, wait, detail, rateLimited)
+			}
+		case store.RunSigning:
+			if ext.sign == nil {
+				return nil // the signing advance job is queued
+			}
+			if err := s.systemAudit(ctx, tx, workflowActor, "issuers.credential_used", "issuer", d.IssuerID,
+				map[string]any{"run": r.ID, "ok": ext.sign.err == nil}); err != nil {
 				return err
+			}
+			if err := ext.sign.err; err != nil {
+				var ce *privateca.Error
+				if errors.As(err, &ce) && ce.Permanent {
+					return s.finish(ctx, tx, r, d, store.RunFailed, "the issuer refused to sign: "+err.Error())
+				}
+				var wait time.Duration
+				detail := ""
+				if ce != nil && ce.RetryAfter > 0 {
+					wait, detail = ce.RetryAfter, " (rate limited)"
+				}
+				return s.retryIssue(ctx, tx, r, d, err.Error(), wait, detail, wait > 0)
+			}
+			if err := s.recordIssued(ctx, tx, r, d, ext.sign.chain); err != nil {
+				return err
+			}
+			if store.Terminal(r.State) {
+				return nil
 			}
 		case store.RunIssued, store.RunWaitingWindow, store.RunBlocked:
 			if ok, err := s.windowGate(ctx, tx, r, d); err != nil || !ok {
@@ -844,6 +902,10 @@ func (s *Service) sendIssue(ctx context.Context, tx *store.Tx, r *store.Run, d *
 	if err != nil {
 		return err
 	}
+	if iss.Native() {
+		return s.sendTask(ctx, tx, r, d, agentproto.TaskCSR, agentproto.CSRPayload{RunID: r.ID, SANs: d.SANs, KeyAlgorithm: d.KeyAlgorithm},
+			issueTaskTTL, store.RunIssuing, fmt.Sprintf("CSR task sent to agent (attempt %d)", r.Attempt))
+	}
 	p := agentproto.IssuePayload{RunID: r.ID, DirectoryURL: iss.DirectoryURL, Email: iss.Email, AgreeTOS: iss.AgreeTOS, Profile: iss.Profile, SANs: d.SANs,
 		KeyAlgorithm: d.KeyAlgorithm, Challenge: d.Challenge}
 	if r.PreviousSHA256 != nil {
@@ -933,6 +995,49 @@ func (s *Service) startRollback(ctx context.Context, tx *store.Tx, r *store.Run,
 		return err
 	}
 	return s.notifyRun(ctx, tx, r, "renewal.rolling_back", "warning", why)
+}
+
+// recordIssued checks and stores an issued chain and moves the run to
+// issued. A chain that fails the checks fails the run instead.
+func (s *Service) recordIssued(ctx context.Context, tx *store.Tx, r *store.Run, d *store.Deployment, chainPEM string) error {
+	leaf, err := s.acceptIssued(ctx, tx, d, chainPEM)
+	if err != nil {
+		// A bad certificate is never deployed. Retrying would order again.
+		return s.finish(ctx, tx, r, d, store.RunFailed, "issued certificate rejected: "+err.Error())
+	}
+	r.IssuedSHA256, r.State, r.CurrentTaskID = &leaf, store.RunIssued, nil
+	if err := tx.UpdateRun(ctx, r, "certificate "+leaf[:16]+" issued and recorded (checkpoint)"); err != nil {
+		return err
+	}
+	if err := s.systemAudit(ctx, tx, workflowActor, "renewals.issued", "run", r.ID, map[string]any{"sha256": leaf}); err != nil {
+		return err
+	}
+	return s.emit(ctx, tx, "certificate.issued", r.ID, map[string]any{"sha256": leaf, "run_id": r.ID, "deployment_id": d.ID,
+		"lineage_id": d.LineageID, "issuer_id": d.IssuerID, "sans": d.SANs})
+}
+
+// retryIssue schedules another issuance attempt, or fails the run once the
+// attempts are used up. A CA's own wait (rateLimited) costs no attempt.
+func (s *Service) retryIssue(ctx context.Context, tx *store.Tx, r *store.Run, d *store.Deployment, why string,
+	wait time.Duration, detail string, rateLimited bool) error {
+	if r.Attempt >= maxIssueAttempt && !rateLimited {
+		return s.finish(ctx, tx, r, d, store.RunFailed, fmt.Sprintf("issuance failed after %d attempts: %s", r.Attempt, why))
+	}
+	if rateLimited {
+		r.Attempt--
+	}
+	next := s.now().Add(max(wait, jobs.Backoff(r.Attempt, 2*time.Minute, time.Hour)))
+	r.State, r.NextAttemptAt, r.CurrentTaskID, r.Error = store.RunRetryScheduled, &next, nil, why
+	if err := tx.UpdateRun(ctx, r, "issuance attempt failed"+detail+"; retry at "+next.UTC().Format(time.RFC3339)+": "+why); err != nil {
+		return err
+	}
+	if rateLimited {
+		if err := s.notifyRun(ctx, tx, r, "renewal.rate_limited", "warning", "the CA rate-limited issuance; next attempt at "+next.UTC().Format(time.RFC3339)); err != nil {
+			return err
+		}
+	}
+	_, err := jobs.Enqueue(ctx, tx, tx.OrgID, JobKindAdvance, r.ID+":retry", map[string]string{"run_id": r.ID}, next)
+	return err
 }
 
 // acceptIssued validates the returned chain before anything is deployed:

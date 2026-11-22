@@ -29,6 +29,21 @@ func (s *Server) setIssuerEAB(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (s *Server) setIssuerCredential(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Credential string `json:"credential"`
+	}
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	v, err := s.Svc.SetIssuerCredential(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"), secret.FromString(req.Credential))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, v)
+	return nil
+}
+
 func (s *Server) listEABKeys(w http.ResponseWriter, r *http.Request) error {
 	v, err := s.Svc.ListEABKeys(r.Context(), PrincipalFrom(r.Context()), r.PathValue("id"))
 	if err != nil {

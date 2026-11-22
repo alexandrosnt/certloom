@@ -696,12 +696,15 @@ paths:
   /api/v1/issuers:
     get:
       tags: [renewal]
-      summary: List ACME issuers
+      summary: List issuers (ACME, Vault PKI, step-ca); credentials are never returned
       responses:
         "200": { $ref: "#/components/responses/List" }
     post:
       tags: [renewal]
-      summary: Register an ACME issuer (owner). agree_tos must be true.
+      summary: >-
+        Register an issuer (issuers:manage). ACME issuers need agree_tos true. Vault and step-ca issuers
+        (ADR-0028) sign a CSR from the agent through the control plane and need ca_bundle, settings and a
+        credential, which is encrypted with the KEK and never returned.
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
         required: true
@@ -709,13 +712,30 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, directory_url, agree_tos]
+              required: [name, directory_url]
               properties:
                 name: { type: string }
-                directory_url: { type: string, format: uri }
-                email: { type: string }
-                agree_tos: { type: boolean }
-                profile: { type: string }
+                kind: { type: string, enum: [acme, vault, stepca], default: acme }
+                directory_url: { type: string, format: uri, description: "ACME directory, or the Vault / step-ca base URL (https, no path)" }
+                email: { type: string, description: ACME only }
+                agree_tos: { type: boolean, description: ACME only; must be true }
+                profile: { type: string, description: ACME only }
+                ca_bundle: { type: string, description: PEM roots trusted for TLS to a Vault or step-ca server }
+                credential: { type: string, writeOnly: true, description: "Vault: AppRole secret_id or token. step-ca: the decrypted provisioner JWK (JSON)." }
+                settings:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    mount: { type: string, description: Vault PKI mount }
+                    role: { type: string, description: Vault PKI role (sign/<role>) }
+                    issuer_ref: { type: string, description: Vault issuer to sign with (optional) }
+                    namespace: { type: string, description: Vault namespace (optional) }
+                    ttl: { type: string, description: "Vault certificate TTL, e.g. 720h (optional)" }
+                    auth_method: { type: string, enum: [approle, token] }
+                    auth_mount: { type: string, description: Vault AppRole mount (default approle) }
+                    role_id: { type: string, description: Vault AppRole role_id }
+                    provisioner: { type: string, description: step-ca JWK provisioner name }
+                    key_id: { type: string, description: step-ca provisioner key id (default the JWK's kid) }
       responses:
         "201": { $ref: "#/components/responses/Object" }
         "400": { $ref: "#/components/responses/Problem" }
@@ -735,7 +755,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, additionalProperties: false, properties: { name: { type: string }, email: { type: string }, profile: { type: string } } }
+            schema: { type: object, additionalProperties: false, properties: { name: { type: string }, email: { type: string, description: ACME only }, profile: { type: string, description: ACME only }, ca_bundle: { type: string, description: Vault and step-ca only } } }
       responses:
         "200": { $ref: "#/components/responses/Object" }
         "400": { $ref: "#/components/responses/Problem" }
@@ -764,6 +784,24 @@ paths:
                 mode: { type: string, enum: [none, reusable, single_use] }
                 kid: { type: string, description: Key id (mode reusable only) }
                 hmac: { type: string, writeOnly: true, description: Base64url HMAC key (mode reusable only; omit to keep the stored one) }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/issuers/{id}/credential:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    put:
+      tags: [renewal]
+      summary: Replace the credential of a Vault or step-ca issuer (ADR-0028, issuers:manage). It is encrypted with the KEK and never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential: { type: string, writeOnly: true }
       responses:
         "200": { $ref: "#/components/responses/Object" }
         "400": { $ref: "#/components/responses/Problem" }

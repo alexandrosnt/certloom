@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexandrosnt/certloom/internal/app"
 	"github.com/alexandrosnt/certloom/internal/authz"
+	"github.com/alexandrosnt/certloom/internal/secret"
 	"github.com/alexandrosnt/certloom/internal/store"
 	"github.com/alexandrosnt/certloom/internal/testpki"
 )
@@ -86,7 +87,7 @@ func TestTemplates(t *testing.T) {
 
 	// A new issuer in the template moves the deployment; with optional
 	// approvals and an owner applying, the new spec is approved at once.
-	if err := e.svc.CreateIssuer(ctx, e.owner, &store.Issuer{Name: "fake2", DirectoryURL: "https://acme2.invalid/dir", AgreeTOS: true}); err != nil {
+	if err := e.svc.CreateIssuer(ctx, e.owner, &store.Issuer{Name: "fake2", DirectoryURL: "https://acme2.invalid/dir", AgreeTOS: true}, secret.Value{}); err != nil {
 		t.Fatal(err)
 	}
 	dry, err := e.svc.ApplyTemplate(ctx, e.owner, webTemplate("fake2", `"*.wf.test"`), true)

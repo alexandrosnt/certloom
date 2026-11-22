@@ -322,6 +322,48 @@ certloom issuer eab-key list gts
 
   A host key for the directory wins over one sent by the control plane.
 
+### Vault PKI and step-ca
+
+Private CAs that have their own signing API can issue without ACME (ADR-0028). The agent
+makes the key and a CSR for the deployment's names (checked against its `allowed_sans`
+as usual), and certloomd checks the CSR against the approved deployment and has it signed.
+There is no challenge, so this also works for hosts the CA cannot reach and for wildcard
+names. The agent needs no route to the CA; certloomd does.
+
+```sh
+# Vault: a PKI role and an AppRole that may only sign with it.
+vault write pki_int/roles/web allowed_domains=example.internal allow_subdomains=true     key_type=ec key_bits=256 max_ttl=720h
+vault policy write certloom - <<< 'path "pki_int/sign/web" { capabilities = ["update"] }'
+vault write auth/approle/role/certloom token_policies=certloom token_ttl=5m
+vault write -f -field=secret_id auth/approle/role/certloom/secret-id > secret_id
+
+certloom issuer create vault-web --kind vault --url https://vault.example.internal:8200     --ca-file vault-ca.pem --mount pki_int --role web     --auth approle --role-id "$(vault read -field=role_id auth/approle/role/certloom/role-id)"     --credential-file secret_id
+
+# step-ca: a JWK provisioner; give certloom its private key, decrypted.
+step ca provisioner add certloom --type JWK --create
+jq -r '.authority.provisioners[] | select(.name=="certloom") | .encryptedKey' $(step path)/config/ca.json     | step crypto jwe decrypt > provisioner.jwk
+certloom issuer create step --kind stepca --url https://ca.example.internal:9000     --ca-file $(step path)/certs/root_ca.crt --provisioner certloom --credential-file provisioner.jwk
+
+certloom deployment create --lineage app --agent web --target app --issuer vault-web     --san app.example.internal
+```
+
+- The Vault role decides which names and key types it signs. Agents make ECDSA P-256 keys,
+  and Vault roles default to RSA, so set `key_type=ec` (or `any`).
+- certloomd always uses `sign/<role>`, never `sign-verbatim`. It logs in with AppRole for
+  each signing call and revokes the token afterwards. `--auth token` uses a fixed token
+  instead; give it a policy limited to the sign path.
+- `--url` must use a name in step-ca's `dnsNames`, because the token's audience is
+  checked against it.
+- `--ca-file` is the only trust anchor for TLS to the CA; the system roots are not used.
+  Replace it with `certloom issuer set-ca-bundle` when the CA's roots change.
+- The credential is stored encrypted with the KEK and never returned. Replace it with
+  `certloom issuer set-credential NAME --credential-file FILE`. Every signing call is
+  audited as `issuers.credential_used`.
+- A refusal by the CA (a name the role does not allow, a bad credential) fails the run
+  without retrying; outages and 5xx answers are retried like ACME failures.
+- The agent must report the `csr.create` task (agents from this release on). Templates
+  work as usual; their challenge setting is ignored for these issuers.
+
 ### Event webhooks
 
 To feed ticketing, a CMDB or a pipeline, register a webhook endpoint for the event types

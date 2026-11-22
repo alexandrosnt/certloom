@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/alexandrosnt/certloom/internal/agentproto"
+	"github.com/alexandrosnt/certloom/internal/privateca"
 	"github.com/go-acme/lego/v5/acme"
 )
 
@@ -65,5 +67,37 @@ func TestIssueRefusesUnknownKeyAlgorithm(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(filepath.Join(a.cfg.StateDir, "certs")); len(entries) != 0 {
 		t.Fatalf("a key was generated: %v", entries)
+	}
+}
+
+// A CSR is made only for names the host's own allowlist covers, and the key
+// it is made with stays in the run directory for the deploy step.
+func TestCSRTask(t *testing.T) {
+	a, _, _ := testAgent(t)
+	a.cfg.Targets[0].AllowedSANs = []string{"www.example.test", "*.example.test"}
+	tk := task("c1", agentproto.TaskCSR, 1)
+	tk.Payload = json.RawMessage(`{"run_id":"run_1","sans":["www.example.test","bank.example"]}`)
+	if _, err := a.handleCSR(context.Background(), &tk); err == nil || !strings.Contains(err.Error(), "allowed_sans") {
+		t.Fatalf("want allowlist refusal, got %v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(a.cfg.StateDir, "certs")); len(entries) != 0 {
+		t.Fatalf("a key was generated: %v", entries)
+	}
+
+	tk.Payload = json.RawMessage(`{"run_id":"run_1","sans":["www.example.test","*.example.test"]}`)
+	out, err := a.handleCSR(context.Background(), &tk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := privateca.CheckCSR(out.(agentproto.CSROutput).CSRPEM, []string{"www.example.test", "*.example.test"}, agentproto.KeyECDSAP256)
+	if err != nil {
+		t.Fatalf("agent CSR fails the control plane's check: %v", err)
+	}
+	key, err := loadOrCreateKey(filepath.Join(a.runDir(a.cfg.Targets[0].Name, "run_1"), "privkey.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !csr.PublicKey.(*ecdsa.PublicKey).Equal(key.Public()) {
+		t.Fatal("CSR is not signed by the run key")
 	}
 }

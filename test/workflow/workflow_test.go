@@ -32,6 +32,7 @@ import (
 	"github.com/alexandrosnt/certloom/internal/jobs"
 	"github.com/alexandrosnt/certloom/internal/kek"
 	"github.com/alexandrosnt/certloom/internal/probe"
+	"github.com/alexandrosnt/certloom/internal/secret"
 	"github.com/alexandrosnt/certloom/internal/store"
 	"github.com/alexandrosnt/certloom/internal/store/storetest"
 	"github.com/alexandrosnt/certloom/internal/testpki"
@@ -135,7 +136,7 @@ func newEnvWith(t *testing.T, oldOpts testpki.Options, mod func(*agent.Config)) 
 	if _, err := svc.CreateLineage(ctx, e.owner, "www", "", pc.SHA256); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.CreateIssuer(ctx, e.owner, &store.Issuer{Name: "fake", DirectoryURL: "https://acme.invalid/dir", AgreeTOS: true}); err != nil {
+	if err := svc.CreateIssuer(ctx, e.owner, &store.Issuer{Name: "fake", DirectoryURL: "https://acme.invalid/dir", AgreeTOS: true}, secret.Value{}); err != nil {
 		t.Fatal(err)
 	}
 	if e.dep, err = svc.CreateDeployment(ctx, e.owner, app.DeploymentInput{Lineage: "www", Agent: "web-01", Target: "www",

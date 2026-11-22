@@ -62,6 +62,7 @@ milestone.
 | T25 | Control plane redirects an approved deployment (other SANs, issuer, target, plugin) | Elevation | The approved spec digest covers SANs, key, issuer, challenge and target (IIS site and bindings, plugin name) and is re-checked before issue and deploy; a mismatch cancels the run (ADR-0015, ADR-0027). Agents still enforce their local SAN allowlists. | M3/M6: workflow `approval_test`, `plugin_test` |
 | T26 | Over-privileged observer credentials (Kubernetes, cloud) | Elevation / Info disclosure | Read-only roles documented per provider; the Kubernetes agent has no access to Secrets and reads PEMs from CertificateRequests; ambient identity preferred over key files (ADR-0023, ADR-0024). | M4: kind e2e; M5: API fakes |
 | T27 | Secrets in Terraform plan/state or Ansible output | Info disclosure | User-supplied secrets are write-only arguments (Terraform) or `no_log` (Ansible); server-generated secrets are not exposed (ADR-0025, ADR-0026). | M6: plan/state and playbook output secret scans in those repositories' CI |
+| T29 | Private CA credentials on the control plane misused or leaked (Vault AppRole secret_id or token, step-ca provisioner key) | Elevation / Info disclosure | Stored under the KEK bound to the issuer, write-only in the API, never in tasks; the CA side limits what they sign (Vault role, step-ca provisioner). certloomd sends only CSRs that match the approved spec exactly (names, key, no extra extensions) and never uses `sign-verbatim`; AppRole tokens are revoked after each call; every use is audited. TLS to the CA trusts only the issuer's CA bundle, with no redirects (ADR-0028). Residual: anyone who controls certloomd can sign within the role. | M7: privateca unit tests, workflow `privateca_test`, e2e `TestVaultAndStepCAIssuers` |
 | T28 | Forged or replayed event webhooks; webhooks used for SSRF | Spoofing / Elevation | Standard Webhooks signatures with timestamps and secret rotation; destination checks as in T9; failing endpoints are disabled (ADR-0021). | M3: Standard Webhooks test vectors, workflow `TestEventWebhooks` |
 
 ## Accepted residual risks (to be reviewed)
@@ -71,5 +72,5 @@ milestone.
 
 ## Open items
 - Offline autonomy is deliberately limited: agents never start issuance on their own (ADR-0004).
-- Threat-model private PKI issuers (M7) and multi-replica HA (M8) when they are designed.
+- Threat-model multi-replica HA (M8) when it is designed.
 - Keyless plugin verification is tested against a virtual Sigstore only (docs/TODO.md).

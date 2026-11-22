@@ -54,12 +54,19 @@ type SpecKey struct {
 	Algorithm string `json:"algorithm"`
 }
 
-// SpecIssuer is the effective CA configuration.
+// SpecIssuer is the effective CA configuration. The fields after Profile
+// are set only for Vault and step-ca issuers, so ACME specs (and their
+// digests) are unchanged.
 type SpecIssuer struct {
 	ID           string `json:"id"`
 	Kind         string `json:"kind"`
 	DirectoryURL string `json:"directory_url"`
 	Profile      string `json:"profile"`
+	Mount        string `json:"mount,omitempty"`
+	Role         string `json:"role,omitempty"`
+	IssuerRef    string `json:"issuer_ref,omitempty"`
+	Namespace    string `json:"namespace,omitempty"`
+	Provisioner  string `json:"provisioner,omitempty"`
 }
 
 // SpecTarget is where the certificate is installed. Attributes holds
@@ -103,8 +110,10 @@ func BuildDeploymentSpec(d *Deployment, iss *Issuer, a *Agent) DeploymentSpec {
 		}
 	}
 	spec := DeploymentSpec{V: 1, Lineage: d.LineageID, SANs: slices.Compact(sans), Purpose: PurposeTLSServer,
-		Key:    SpecKey{Algorithm: d.KeyAlgorithm},
-		Issuer: SpecIssuer{ID: iss.ID, Kind: iss.Kind, DirectoryURL: iss.DirectoryURL, Profile: iss.Profile},
+		Key: SpecKey{Algorithm: d.KeyAlgorithm},
+		Issuer: SpecIssuer{ID: iss.ID, Kind: iss.Kind, DirectoryURL: iss.DirectoryURL, Profile: iss.Profile,
+			Mount: iss.Settings.Mount, Role: iss.Settings.Role, IssuerRef: iss.Settings.IssuerRef, Namespace: iss.Settings.Namespace,
+			Provisioner: iss.Settings.Provisioner},
 		Target: tgt}
 	if d.Challenge == "dns-01" {
 		spec.V, spec.Challenge = SpecVersion, d.Challenge

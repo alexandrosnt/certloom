@@ -23,6 +23,34 @@ func (f *hmacFlags) add(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.file, "hmac-file", "", "read the base64url HMAC key from a file")
 }
 
+// credFlags reads an issuer credential (Vault secret_id or token, step-ca
+// provisioner JWK) from stdin or a file, never from an argument.
+type credFlags struct {
+	stdin bool
+	file  string
+}
+
+func (f *credFlags) add(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&f.stdin, "credential-stdin", false, "read the credential from stdin")
+	cmd.Flags().StringVar(&f.file, "credential-file", "", "read the credential from a file")
+}
+
+// read returns the credential, or "" when no flag was given. A JWK may span
+// lines, so stdin is read to the end.
+func (f *credFlags) read() (string, error) {
+	switch {
+	case f.stdin && f.file != "":
+		return "", &usageError{"use only one of --credential-stdin and --credential-file"}
+	case f.file != "":
+		b, err := os.ReadFile(f.file)
+		return strings.TrimSpace(string(b)), err
+	case f.stdin:
+		b, err := io.ReadAll(io.LimitReader(os.Stdin, 64<<10))
+		return strings.TrimSpace(string(b)), err
+	}
+	return "", nil
+}
+
 // read returns the key, or "" when no flag was given.
 func (f *hmacFlags) read() (string, error) {
 	switch {
