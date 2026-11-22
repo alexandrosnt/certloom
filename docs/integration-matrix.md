@@ -7,7 +7,7 @@ Capability vocabulary: `discover`, `read_metadata`, `request`, `renew`, `revoke`
 `export_certificate`, `export_private_key`, `import`, `deploy`, `bind`, `activate`,
 `verify`, `rollback`, `manage_trust_bundle`, `health_check`.
 
-## Test status (2026-11-21)
+## Test status (2026-11-22)
 
 - **M1 rows:** supported, covered by the unit, store and e2e tests.
 - **M2 rows** (Linux agent discovery, Certbot discovery, ACME via lego v5, Nginx target): supported for the claimed capabilities, with these limits:

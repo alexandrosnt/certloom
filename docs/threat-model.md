@@ -1,7 +1,9 @@
 # Threat model
 
-Status: Proposed (M0). It covers M1 (agentless inventory and monitoring) in full, and M2
-(agent, ACME, Nginx) at design level. Revisit at every milestone.
+Status: Accepted, updated 2026-11-22. It covers what is built through M6: inventory and
+monitoring (M1), agent renewal (M2), approvals, DNS-01 and webhooks (M3), Windows and
+Kubernetes (M4), cloud observation (M5), and IaC and agent plugins (M6). Revisit at every
+milestone.
 
 ## Assets
 | Asset | M1 | M2 |
@@ -14,6 +16,9 @@ Status: Proposed (M0). It covers M1 (agentless inventory and monitoring) in full
 | Audit trail | yes | yes |
 | Inventory (hostnames, internal topology) | yes. **Sensitive reconnaissance data** | yes |
 | Policies, ownership | yes | yes |
+| DNS provider credentials, EAB HMAC keys (M3) | - | On the host, or stored centrally under the KEK, write-only, and sealed per agent and task (ADR-0018, ADR-0019) |
+| Cloud and Kubernetes read credentials (M4, M5) | - | On the agent host only; ambient identity preferred (ADR-0023, ADR-0024) |
+| Plugin trust policy and installed plugins (M6) | - | On the agent host only (ADR-0027) |
 
 ## Trust boundaries
 1. Browser / CLI <-> `certloomd` API/UI (TLS; OIDC session or API token)
@@ -22,7 +27,9 @@ Status: Proposed (M0). It covers M1 (agentless inventory and monitoring) in full
 4. `certloomd` <-> notification sinks (SMTP, webhook URLs: untrusted destinations)
 5. `certloomd` <-> external audit sink
 6. **M2:** `certloomd` <-> agent (mTLS + signed tasks); agent <-> local OS/Nginx; agent <-> ACME CA
-7. Supply chain: source -> CI -> release artifacts -> operator
+. **M4/M5:** agent <-> Kubernetes API and cloud provider APIs (read-only)
+9. **M6:** plugin publisher -> package + signature -> `certloom-plugin` -> agent host; agent <-> plugin process
+10. **M6:** Terraform/OpenTofu and Ansible (operator machines, plan/state files, logs) <-> REST API
 
 ## Threats and mitigations (STRIDE)
 
@@ -42,7 +49,7 @@ Status: Proposed (M0). It covers M1 (agentless inventory and monitoring) in full
 | T12 | Compromised control plane orders malicious issuance or deployment | Elevation | It cannot read leaf keys. Policy SAN allowlists per lineage. Issuance rate and concurrency caps. Approvals (M3). External audit export. Agents validate that a task's SANs fall within their locally configured allowlist as well. | M2 |
 | T13 | Unauthorized issuance for a hostname | Spoofing | Lineage `expected_sans` plus policy domain patterns. CAA awareness. CT monitoring (Research). | M2/M3 |
 | T14 | Replay of an agent task or a stale worker writing after losing its lease | Tampering | Nonce, `not_after`, task binding, lease-epoch fencing (ADR-0003/0004). | M2 |
-| T15 | Malicious dependency or compromised release | Tampering | `go.sum` pinning, govulncheck, license checks, Dependabot, signed releases + SBOM + provenance (ADR-0014). Compiled-in connectors only (ADR-0007). | M0 CI, M1 release |
+| T15 | Malicious dependency or compromised release | Tampering | `go.sum` pinning, govulncheck, license checks, Dependabot, signed releases + SBOM + provenance (ADR-0014). certloomd loads no third-party code; agent plugins run out of process and only from packages a trusted publisher signed (ADR-0027, T23). | M0 CI, M1 release; signed releases M8 |
 | T16 | Loss of the KEK or the DB | DoS | Documented backup of the KEK separate from the DB. Restore drill in CI. | M1 |
 | T17 | Inventory disclosure (reconnaissance value) | Info disclosure | The inventory itself is treated as sensitive: auth on all reads, no public dashboards, exports audited. | M1 |
 | T18 | OIDC login CSRF, code injection, ID-token replay | Spoofing | State (constant-time compare), nonce, and PKCE S256 in a short-lived HttpOnly cookie. ID token verified for issuer, audience and expiry. `email_verified` required. Device-flow tokens accepted only for the configured public client. | M1: e2e forged-state, unverified-email and non-member tests |
@@ -50,6 +57,12 @@ Status: Proposed (M0). It covers M1 (agentless inventory and monitoring) in full
 | T20 | Duplicate side effects from client retries | Tampering | Idempotency-Key replay. Secret-bearing responses (token creation) are never stored. | M1: `api.TestIdempotencyKeys` |
 | T21 | Lost update between concurrent editors | Tampering | ETag/If-Match with versioned rows; 412 on a stale write. | M1: `api.TestETagIfMatch` |
 | T22 | Consistent rewrite of the audit table by a DB owner | Repudiation | External export + `certloomd audit-verify-export --compare`. | M1: `auditexport` tests, e2e |
+| T23 | Malicious or substituted agent plugin | Tampering / Elevation | `certloom-plugin` installs only packages whose Sigstore bundle verifies against `plugins.trust` (keyless CI identity or public key); no skip flag. Safe extraction (no links, no traversal). The agent re-checks the executable digest from the install record before every call and ignores installs whose trust entry was removed. The control plane cannot install plugins. Residual: a trusted plugin runs with the agent's privileges. | M6: `cmd/certloom-plugin` tests, `agent.TestInstalledPluginResolution` |
+| T24 | Central DNS or EAB credentials leak | Info disclosure | Stored under the KEK, write-only in the API, sealed with HPKE to the agent key for one task, kept in agent memory only, every delivery audited; hosts can opt out (ADR-0018, ADR-0019). | M3: workflow `central_dns_test`, `eab_test` (no plaintext in tasks, audit or ciphertext column) |
+| T25 | Control plane redirects an approved deployment (other SANs, issuer, target, plugin) | Elevation | The approved spec digest covers SANs, key, issuer, challenge and target (IIS site and bindings, plugin name) and is re-checked before issue and deploy; a mismatch cancels the run (ADR-0015, ADR-0027). Agents still enforce their local SAN allowlists. | M3/M6: workflow `approval_test`, `plugin_test` |
+| T26 | Over-privileged observer credentials (Kubernetes, cloud) | Elevation / Info disclosure | Read-only roles documented per provider; the Kubernetes agent has no access to Secrets and reads PEMs from CertificateRequests; ambient identity preferred over key files (ADR-0023, ADR-0024). | M4: kind e2e; M5: API fakes |
+| T27 | Secrets in Terraform plan/state or Ansible output | Info disclosure | User-supplied secrets are write-only arguments (Terraform) or `no_log` (Ansible); server-generated secrets are not exposed (ADR-0025, ADR-0026). | M6: plan/state and playbook output secret scans in those repositories' CI |
+| T28 | Forged or replayed event webhooks; webhooks used for SSRF | Spoofing / Elevation | Standard Webhooks signatures with timestamps and secret rotation; destination checks as in T9; failing endpoints are disabled (ADR-0021). | M3: Standard Webhooks test vectors, workflow `TestEventWebhooks` |
 
 ## Accepted residual risks (to be reviewed)
 - If no external audit sink is configured, a DB superuser can rewrite the audit trail undetectably by recomputing the hashes. `certloomd` logs a warning at startup, and the UI shows an error banner, in that case.
@@ -58,4 +71,5 @@ Status: Proposed (M0). It covers M1 (agentless inventory and monitoring) in full
 
 ## Open items
 - Offline autonomy is deliberately limited: agents never start issuance on their own (ADR-0004).
-- Threat-model the Phase 4+ connectors (Windows, Kubernetes, cloud) as each is planned.
+- Threat-model private PKI issuers (M7) and multi-replica HA (M8) when they are designed.
+- Keyless plugin verification is tested against a virtual Sigstore only (docs/TODO.md).

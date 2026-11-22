@@ -18,4 +18,5 @@ Every commit must be signed off (`git commit -s`), certifying the
 ## Checks
 
 `go vet ./...`, `go test -race ./...`, golangci-lint, govulncheck and gitleaks
-run in CI and must pass.
+run in CI and must pass, for the main module and for the nested modules
+`client/` and `cmd/certloom-plugin/` (run them from those directories).
