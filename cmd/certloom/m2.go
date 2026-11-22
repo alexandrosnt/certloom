@@ -43,7 +43,7 @@ func agentCmd() *cobra.Command {
 				fmt.Println("Inventory requested; results appear in `certloom inventory list` once the agent reports.")
 			})
 		})}
-	cmd.AddCommand(token, revoke, inv, observationsCmd(), agentPluginsCmd(), listCmd("list", "List agents", "/api/v1/agents", "ID\tNAME\tHEALTH\tHOST\tVERSION\tTARGETS",
+	cmd.AddCommand(token, revoke, inv, observationsCmd(), agentPluginsCmd(), agentTrustStoresCmd(), listCmd("list", "List agents", "/api/v1/agents", "ID\tNAME\tHEALTH\tHOST\tVERSION\tTARGETS",
 		func(w io.Writer, raw json.RawMessage) {
 			var a struct {
 				ID, Name, Health, Hostname, Version string

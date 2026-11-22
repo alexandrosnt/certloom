@@ -107,6 +107,10 @@ func (s *Service) syncAuthorities(ctx context.Context, tx *store.Tx, g *cagraph.
 	if err != nil {
 		return err
 	}
+	private, err := privateKeys(ctx, tx)
+	if err != nil {
+		return err
+	}
 	open, err := tx.OpenAuthorityFindings(ctx)
 	if err != nil {
 		return err
@@ -128,7 +132,7 @@ func (s *Service) syncAuthorities(ctx context.Context, tx *store.Tx, g *cagraph.
 			in := checks.AuthorityInput{Key: k, Subject: a.Subject, Root: a.Root, Expiry: a.Expiry, Now: now, Policy: pol}
 			if fs = checks.Authority(in); len(fs) > 0 {
 				// Only authorities near expiry need the trust lookup.
-				in.PubliclyTrusted = s.publiclyTrusted(ctx, tx, a)
+				in.PubliclyTrusted = s.publiclyTrusted(ctx, tx, g, a, private)
 				fs = checks.Authority(in)
 			}
 		}
@@ -148,8 +152,14 @@ func (s *Service) syncAuthorities(ctx context.Context, tx *store.Tx, g *cagraph.
 }
 
 // publiclyTrusted reports whether any copy of the authority chains to the
-// trust anchors used for endpoint checks (the system roots by default).
-func (s *Service) publiclyTrusted(ctx context.Context, tx *store.Tx, a *cagraph.Authority) bool {
+// configured or system roots. A CA under a trust bundle anchor is private
+// even if the certloomd host's OS store happens to trust it.
+func (s *Service) publiclyTrusted(ctx context.Context, tx *store.Tx, g *cagraph.Graph, a *cagraph.Authority, private map[string]bool) bool {
+	for _, k := range g.Ancestors(a.Key) {
+		if private[k] {
+			return false
+		}
+	}
 	inters, err := tx.KnownIntermediates(ctx)
 	if err != nil {
 		return false

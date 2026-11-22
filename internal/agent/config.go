@@ -54,6 +54,9 @@ type Config struct {
 	Plugins *pluginstore.Config `json:"plugins,omitempty"`
 	// DiscoveryPlugins report certificates during inventory.
 	DiscoveryPlugins []DiscoveryPluginConfig `json:"discovery_plugins,omitempty"`
+	// TrustStores are trust stores the control plane manages or observes
+	// (ADR-0030).
+	TrustStores []TrustStoreConfig `json:"trust_stores,omitempty"`
 }
 
 // EABConfig is a host-local EAB key for one ACME directory.
@@ -157,6 +160,7 @@ func (c *Config) Validate() error {
 		p = append(p, c.Plugins.Validate()...)
 	}
 	p = append(p, c.validateDiscoveryPlugins()...)
+	p = append(p, c.validateTrustStores()...)
 	if len(p) > 0 {
 		return errors.New("invalid agent config: " + strings.Join(p, "; "))
 	}
@@ -176,7 +180,7 @@ func (c *Config) taskAllowed(t string) bool {
 	if c.Kubernetes != nil && t != agentproto.TaskInventoryScan {
 		return false // observation only; never stand in for cert-manager
 	}
-	if c.Cloud != nil && len(c.Targets) == 0 && t != agentproto.TaskInventoryScan {
+	if c.Cloud != nil && len(c.Targets) == 0 && t != agentproto.TaskInventoryScan && (t != agentproto.TaskTrustApply || len(c.TrustStores) == 0) {
 		return false // a cloud observer has nothing to deploy to
 	}
 	if len(c.AllowedTasks) == 0 {
@@ -247,6 +251,9 @@ func (c *Config) inventoryInterval() int {
 	}
 	if len(c.DiscoveryPlugins) > 0 {
 		shortest(cloudDefaultInterval)
+	}
+	if len(c.TrustStores) > 0 {
+		shortest(900)
 	}
 	for _, t := range c.Targets {
 		if t.Type == agentproto.TargetIIS {

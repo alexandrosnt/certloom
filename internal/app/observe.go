@@ -18,19 +18,20 @@ import (
 // storedInventory is what is kept of an inventory: observations, not the
 // certificate files, which go into the certificate inventory instead.
 type storedInventory struct {
-	Certbot    []agentproto.CertbotLineage  `json:"certbot,omitempty"`
-	IIS        []agentproto.IISBinding      `json:"iis,omitempty"`
-	WinACME    []agentproto.WinACMERenewal  `json:"win_acme,omitempty"`
-	Kubernetes *agentproto.KubeInventory    `json:"kubernetes,omitempty"`
-	Cloud      *agentproto.CloudInventory   `json:"cloud,omitempty"`
-	Plugins    []agentproto.PluginInventory `json:"plugins,omitempty"`
+	Certbot     []agentproto.CertbotLineage  `json:"certbot,omitempty"`
+	IIS         []agentproto.IISBinding      `json:"iis,omitempty"`
+	WinACME     []agentproto.WinACMERenewal  `json:"win_acme,omitempty"`
+	Kubernetes  *agentproto.KubeInventory    `json:"kubernetes,omitempty"`
+	Cloud       *agentproto.CloudInventory   `json:"cloud,omitempty"`
+	Plugins     []agentproto.PluginInventory `json:"plugins,omitempty"`
+	TrustStores []agentproto.TrustStoreState `json:"trust_stores,omitempty"`
 }
 
 // importObservations stores an agent's IIS, win-acme and Kubernetes
 // observations, imports the certificates they carry and syncs drift and
 // Kubernetes findings. It returns the number of new certificates.
 func (s *Service) importObservations(ctx context.Context, tx *store.Tx, agentID string, inv agentproto.InventoryOutput) (int, error) {
-	if len(inv.IIS) == 0 && len(inv.WinACME) == 0 && inv.Kubernetes == nil && inv.Cloud == nil && len(inv.Certbot) == 0 && len(inv.Plugins) == 0 {
+	if len(inv.IIS) == 0 && len(inv.WinACME) == 0 && inv.Kubernetes == nil && inv.Cloud == nil && len(inv.Certbot) == 0 && len(inv.Plugins) == 0 && len(inv.TrustStores) == 0 {
 		return 0, nil
 	}
 	now := s.now()
@@ -89,7 +90,12 @@ func (s *Service) importObservations(ctx context.Context, tx *store.Tx, agentID 
 		pi.Items = items
 		plugins = append(plugins, pi)
 	}
+	trust, err := s.importTrustStates(ctx, tx, agentID, inv.TrustStores)
+	if err != nil {
+		return n, err
+	}
 	stored := storedInventory{Certbot: inv.Certbot, IIS: inv.IIS, WinACME: inv.WinACME, Kubernetes: inv.Kubernetes, Cloud: inv.Cloud, Plugins: plugins}
+	stored.TrustStores = trust
 	if stored.Kubernetes != nil {
 		k := *stored.Kubernetes
 		k.Certificates = slices.Clone(k.Certificates)

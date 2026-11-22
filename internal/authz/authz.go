@@ -39,12 +39,14 @@ const (
 	ManageTemplates Permission = "templates:manage"
 	// event webhook endpoints and their secrets (ADR-0021)
 	ManageWebhooks Permission = "webhooks:manage"
+	// trust bundles and their assignment to agent trust stores (ADR-0030)
+	ManageTrust Permission = "trust:manage"
 )
 
 var grants = map[string][]Permission{
 	"owner": {ViewInventory, ImportCerts, ManageEndpoints, ManageScopes, ManageOwnership, AckAlerts,
 		ManageChannels, ManageTokens, ViewAudit, ManageAutomation, ManageMembers, ManagePolicy,
-		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions, ManageDNS, ManageTemplates, ManageWebhooks},
+		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions, ManageDNS, ManageTemplates, ManageWebhooks, ManageTrust},
 	"operator":            {ViewInventory, ImportCerts, ManageEndpoints, ManageOwnership, AckAlerts, RunRenewals, RequestExceptions},
 	"viewer":              {ViewInventory},
 	"auditor":             {ViewInventory, ViewAudit},

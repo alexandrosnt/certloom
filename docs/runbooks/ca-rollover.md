@@ -41,7 +41,9 @@ certloom does not change your CA. A typical Vault or step-ca rollover:
 
 1. Create the new intermediate (or root) in the CA. With Vault, see its *rotation
    primitives*: cross-sign the new intermediate so both hierarchies validate.
-2. Distribute the new root to relying parties before any leaf depends on it.
+2. Distribute the new root to relying parties before any leaf depends on it. With trust
+   bundles (docs/runbooks/trust-bundles.md) add it to the bundle and wait until every
+   store confirmed the version.
 3. Point the issuer at the new intermediate. For Vault, set the mount's default issuer.
 4. Run `certloom ca plan` to list what still depends on the old CA, then
    `certloom ca renew-affected <old-ca> --dry-run` to see which deployments it would

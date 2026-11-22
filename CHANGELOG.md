@@ -7,6 +7,15 @@
   `os/exec` used instead of the limited `Write`.
 
 ### Added
+- Trust bundles (ADR-0030): named, versioned sets of CA anchors pushed by the agent to
+  trust stores declared in its config (`trust_stores`: `pem`, `pkcs12`, `debian`, `rhel`,
+  `windows`; `mode: observe` only reports). New task `trust.apply` writes the anchors,
+  runs the update or reload command, and restores the store if that fails.
+  `certloom trust-bundle plan|apply|status|show|list|delete`, `/api/v1/trust-bundles*`,
+  permission `trust:manage` (owner). Removing an anchor is refused while a CA in use
+  chains to it or a store has not confirmed the current version, unless `--force
+  --reason`. Findings `trust_store_drift` and `trust_store_unknown_anchor`. Bundle
+  anchors are trusted by endpoint checks and never count as publicly trusted.
 - Root and intermediate CA inventory (ADR-0029). Every stored certificate is linked to the
   CA that signed it (subject plus key, so cross-signed copies count as one CA), including
   certificates stored earlier. New findings: `ca_expiring` on CAs in use (policy

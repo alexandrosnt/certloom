@@ -34,10 +34,12 @@ const (
 	// TaskCSR makes the run's key and returns a CSR for the control plane to
 	// have signed by a Vault or step-ca issuer (ADR-0028).
 	TaskCSR = "csr.create"
+	// TaskTrustApply writes a trust bundle version to a trust store (ADR-0030).
+	TaskTrustApply = "trust.apply"
 )
 
 // AllTaskTypes lists every known task type.
-var AllTaskTypes = []string{TaskInventoryScan, TaskIssue, TaskDeploy, TaskVerify, TaskRollback, TaskCSR}
+var AllTaskTypes = []string{TaskInventoryScan, TaskIssue, TaskDeploy, TaskVerify, TaskRollback, TaskCSR, TaskTrustApply}
 
 // AgentURI is the URI SAN identifying an agent in its client certificate.
 func AgentURI(orgID, agentID string) *url.URL {
@@ -149,6 +151,8 @@ type Heartbeat struct {
 	InventorySeconds int `json:"inventory_seconds,omitempty"`
 	// Plugins lists the plugins installed or pinned on the host (ADR-0027).
 	Plugins []PluginInfo `json:"plugins,omitempty"`
+	// TrustStores lists the trust stores declared in the agent config.
+	TrustStores []TrustStoreInfo `json:"trust_stores,omitempty"`
 }
 
 // PluginInfo describes one plugin an agent may run.
@@ -346,6 +350,8 @@ type InventoryOutput struct {
 	// Plugins holds what discovery plugins and deploy_target plugins with
 	// an inventory action reported.
 	Plugins []PluginInventory `json:"plugins,omitempty"`
+	// TrustStores holds what each declared trust store contains.
+	TrustStores []TrustStoreState `json:"trust_stores,omitempty"`
 }
 
 // PluginInventory is the answer of one plugin inventory call. Source is the

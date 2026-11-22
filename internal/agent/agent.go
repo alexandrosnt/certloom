@@ -52,6 +52,8 @@ type Agent struct {
 	// win is the Windows key store, certificate store and HTTP.sys access
 	// used by iis targets; nil on other systems.
 	win winHost
+	// winTrust is LocalMachineRoot for windows trust stores; nil elsewhere.
+	winTrust winTrustHost
 	// cloudTest replaces HTTP clients, credentials and endpoints of cloud
 	// provider calls in tests.
 	cloudTest *cloudHooks
@@ -162,7 +164,7 @@ func Enroll(ctx context.Context, cfg *Config, token, caHash, hostname string) (s
 
 // New loads an enrolled agent.
 func New(cfg *Config, log *slog.Logger) (*Agent, error) {
-	a := &Agent{cfg: cfg, log: log, win: newWinHost()}
+	a := &Agent{cfg: cfg, log: log, win: newWinHost(), winTrust: newWinTrust()}
 	setDNSResolvers(cfg.Resolvers)
 	b, err := os.ReadFile(a.path("agent.json"))
 	if err != nil {
@@ -190,6 +192,7 @@ func New(cfg *Config, log *slog.Logger) (*Agent, error) {
 		agentproto.TaskVerify:        a.handleVerify,
 		agentproto.TaskRollback:      a.handleRollback,
 		agentproto.TaskCSR:           a.handleCSR,
+		agentproto.TaskTrustApply:    a.handleTrustApply,
 	}
 	return a, nil
 }
@@ -277,6 +280,7 @@ func (a *Agent) Heartbeat(ctx context.Context) error {
 	}
 	hb.DNSSolvers = a.cfg.dnsSolverInfo()
 	hb.Plugins = a.cfg.pluginInfos()
+	hb.TrustStores = a.cfg.trustStoreInfos()
 	hb.InventorySeconds = a.cfg.inventoryInterval()
 	hb.NoCentralDNS, hb.NoCentralEAB = !a.cfg.centralDNSAllowed(), !a.cfg.centralEABAllowed()
 	if !hb.NoCentralDNS || !hb.NoCentralEAB {

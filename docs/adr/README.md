@@ -39,3 +39,4 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0027](0027-plugin-sdk.md) | Out-of-process plugins with signed packages | Accepted |
 | [0028](0028-private-ca-issuers.md) | Vault PKI and step-ca issuers | Accepted |
 | [0029](0029-ca-inventory.md) | Root and intermediate CA inventory and rollover planning | Accepted |
+| [0030](0030-trust-bundles.md) | Trust-bundle distribution and drift detection | Accepted |

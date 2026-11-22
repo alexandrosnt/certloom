@@ -231,3 +231,50 @@ func Cert(store string, scope Scope, thumb []byte) ([]byte, error) {
 	defer windows.CertFreeCertificateContext(ctx) //nolint:errcheck // nothing to do on failure
 	return bytes.Clone(unsafe.Slice(ctx.EncodedCert, ctx.Length)), nil
 }
+
+// TrustedCert is a certificate in a root store with its friendly name.
+type TrustedCert struct {
+	DER          []byte
+	FriendlyName string
+}
+
+// ListCerts returns every certificate in store.
+func ListCerts(store string, scope Scope) ([]TrustedCert, error) {
+	h, err := openStore(store, scope, true)
+	if err != nil {
+		return nil, err
+	}
+	defer windows.CertCloseStore(h, 0) //nolint:errcheck // read-only use
+	var out []TrustedCert
+	var ctx *windows.CertContext
+	for {
+		ctx, err = windows.CertEnumCertificatesInStore(h, ctx)
+		if err != nil {
+			break // end of store
+		}
+		out = append(out, TrustedCert{DER: bytes.Clone(unsafe.Slice(ctx.EncodedCert, ctx.Length)), FriendlyName: friendlyName(ctx)})
+	}
+	return out, nil
+}
+
+// AddTrusted adds a CA certificate to store, labelled friendlyName.
+func AddTrusted(store string, scope Scope, c *x509.Certificate, friendly string) error {
+	h, err := openStore(store, scope, false)
+	if err != nil {
+		return err
+	}
+	defer windows.CertCloseStore(h, 0) //nolint:errcheck // nothing to do on failure
+	tmp, err := windows.CertCreateCertificateContext(encoding, &c.Raw[0], uint32(len(c.Raw)))
+	if err != nil {
+		return err
+	}
+	defer windows.CertFreeCertificateContext(tmp) //nolint:errcheck // nothing to do on failure
+	var ctx *windows.CertContext
+	if err := windows.CertAddCertificateContextToStore(h, tmp, windows.CERT_STORE_ADD_REPLACE_EXISTING, &ctx); err != nil {
+		return fmt.Errorf("add certificate: %w", err)
+	}
+	defer windows.CertFreeCertificateContext(ctx) //nolint:errcheck // nothing to do on failure
+	fn := windows.StringToUTF16(friendly)
+	blob := windows.CryptDataBlob{Size: uint32(len(fn) * 2), Data: (*byte)(unsafe.Pointer(&fn[0]))}
+	return setProp(ctx, certFriendlyNamePropID, unsafe.Pointer(&blob))
+}

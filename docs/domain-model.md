@@ -72,6 +72,8 @@ The level can move down (for example, when a target drifts -> `provisioned`). Ev
 | `ca_expiring` | on an authority in use: warning < 180 d, critical < 30 d (policy `caExpiry`); info for publicly trusted CAs (ADR-0029) |
 | `chain_outlived` | warning when a certificate stays valid after its CA chain ends; critical within 30 d of the chain's end |
 | `chain_cert_expiring` | on an endpoint: a served intermediate expires before the leaf, warning < 30 d, critical < 7 d |
+| `trust_store_drift` | on a trust store: warning when it lacks a bundle anchor, holds an extra certloom anchor or has not confirmed a version within 1 h; critical when the missing anchor is the root of certificates in use |
+| `trust_store_unknown_anchor` | on a trust store: warning for a locally added anchor that is in no trust bundle |
 
 ## State machines
 

@@ -62,3 +62,18 @@ targets:
 # discovery_plugins:
 #   - name: java-keystores
 #     plugin: corp-jks
+# Trust stores certloom may manage or only observe (ADR-0030,
+# docs/runbooks/trust-bundles.md). A store is never written unless it is
+# listed here with mode manage (the default).
+# trust_stores:
+#   - name: os
+#     type: debian            # or rhel; certloom only touches its own anchor files
+#   - name: java
+#     type: pkcs12
+#     path: /etc/myapp/truststore.p12
+#     password_file: /etc/certloom-agent/java-trust.pw   # default password: changeit
+#     reload_command: [systemctl, restart, myapp]
+#   - name: legacy
+#     type: pem
+#     path: /etc/haproxy/ca.pem
+#     mode: observe

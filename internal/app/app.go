@@ -451,6 +451,7 @@ func (s *Service) RunProbeJob(ctx context.Context, j jobs.Job) error {
 	var scope *probe.Scope
 	var expected string
 	var known []*x509.Certificate
+	var roots *x509.CertPool
 	var pol checks.Policy
 	err := s.DB.WithOrg(ctx, j.OrgID, func(tx *store.Tx) (err error) {
 		if ep, err = tx.GetEndpoint(ctx, pl.EndpointID); err != nil {
@@ -480,6 +481,9 @@ func (s *Service) RunProbeJob(ctx context.Context, j jobs.Job) error {
 				expected = *l.CurrentSHA256
 			}
 		}
+		if roots, err = s.privateRoots(ctx, tx); err != nil {
+			return err
+		}
 		known, err = tx.KnownIntermediates(ctx)
 		return err
 	})
@@ -501,7 +505,7 @@ func (s *Service) RunProbeJob(ctx context.Context, j jobs.Job) error {
 		prev = *ep.LastLeafSHA256
 	}
 	fs := checks.Endpoint(checks.EndpointInput{Observation: obs, ExpectedName: ep.Name(), PreviousLeaf: prev, ExpectedLeaf: expected,
-		Roots: s.Roots, KnownIntermediates: known, ConsecutiveFailures: failures, Now: now, Policy: pol})
+		Roots: roots, KnownIntermediates: known, ConsecutiveFailures: failures, Now: now, Policy: pol})
 	next := now.Add(jitter(time.Duration(ep.IntervalSeconds) * time.Second))
 	if obs.ErrorClass != "" {
 		next = now.Add(min(jobs.Backoff(failures, time.Minute, time.Duration(ep.IntervalSeconds)*time.Second), time.Duration(ep.IntervalSeconds)*time.Second))

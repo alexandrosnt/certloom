@@ -82,6 +82,7 @@ var checkVersions = map[string]int{
 	CheckWeakSignature: 1, CheckFingerprintChanged: 1, CheckLineageMismatch: 1, CheckProbeFailed: 1,
 	CheckEABPool: 1, CheckEABKeyExpiring: 1,
 	CheckCAExpiring: 1, CheckChainOutlived: 1, CheckChainCertExpiring: 1,
+	CheckTrustStoreDrift: 1, CheckTrustUnknownAnchor: 1,
 }
 
 // Version returns a check's definition version (0 for unknown checks).

@@ -28,9 +28,16 @@ Not done yet, roughly in the order I want to tackle it.
 - Count agent and cloud inventory objects (IIS bindings, Kubernetes, cloud certificates)
   as "in use" for `ca_expiring`; today only lineages and probed endpoints do.
 - Go client, Terraform data source and Ansible info module for authorities.
-- A CA in the OS trust store of the certloomd host counts as publicly trusted, which
-  lowers `ca_expiring` to info. A separate list of private anchors would fix that; it
-  belongs with trust-bundle distribution (next M7 item).
+- A private root in the certloomd host's OS store that is in no trust bundle still
+  counts as publicly trusted; put private roots in a bundle.
+
+## Trust bundles
+- Second-person approval for bundle changes, gated by policy (ADR-0030 consequences).
+- JKS keystores, NSS (Firefox) and macOS keychains.
+- Writing trust-manager Bundle sources in Kubernetes (observe-only today).
+- Windows: unknown-anchor detection covers only certloom's own entries in
+  LocalMachineRoot; telling local roots from the Microsoft root program needs that list.
+- UI page for bundles and store status; Terraform and Ansible support.
 
 ## Renewal
 - No command to change a deployment's issuer (e.g. staging to production); today it

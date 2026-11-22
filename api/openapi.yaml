@@ -925,6 +925,59 @@ paths:
       responses:
         "202": { description: Queued }
         "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/trust-bundles:
+    get:
+      tags: [inventory]
+      summary: List trust bundles (ADR-0030)
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    put:
+      tags: [inventory]
+      summary: Plan or apply a trust bundle's anchors and store assignments (trust:manage). Removing anchors is refused while a CA in use chains to them or an assigned store has not confirmed the current version, unless force is set with a reason.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, anchors]
+              properties:
+                name: { type: string }
+                team: { type: string }
+                anchors: { type: array, items: { type: string, description: PEM } }
+                stores:
+                  type: array
+                  items: { type: object, required: [agent, store], properties: { agent: { type: string }, store: { type: string } } }
+                base_version: { type: integer, description: Current version the plan was made against }
+                dry_run: { type: boolean }
+                force: { type: boolean }
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/v1/trust-bundles/status:
+    get:
+      tags: [inventory]
+      summary: Every assigned trust store with the version it confirmed and its last error
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+  /api/v1/trust-bundles/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [inventory]
+      summary: A bundle (id or name) with its current anchors and stores
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [inventory]
+      summary: Delete a bundle no store is assigned to (trust:manage); stores keep their anchors
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /api/v1/templates:
     get:
       tags: [renewal]

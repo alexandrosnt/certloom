@@ -192,6 +192,11 @@ func (s *Service) AgentResult(ctx context.Context, id AgentIdentity, taskID stri
 				return err
 			}
 		}
+		if task.Type == agentproto.TaskTrustApply {
+			if err := s.importTrustResult(ctx, tx, id, task, res); err != nil {
+				return err
+			}
+		}
 		if runID != nil {
 			// Keyed by task: a run-keyed job could be deduplicated against an
 			// advance that is executing right now and miss this result.
