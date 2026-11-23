@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs after install and upgrade (deb and rpm). Creates the certloom user and
-# restarts a running certloomd on upgrade. The service is not enabled here:
-# the database and settings have to be prepared first.
+# migrates and restarts a running certloomd on upgrade. A fresh install is
+# configured and started by "certloomd setup".
 set -e
 
 if command -v systemd-sysusers >/dev/null 2>&1; then
@@ -15,6 +15,14 @@ mkdir -p /etc/certloom/tls
 chown root:certloom /etc/certloom/certloomd.env /etc/certloom/tls
 chmod 0640 /etc/certloom/certloomd.env
 chmod 0750 /etc/certloom/tls
+
+if [ -f /etc/certloom/migrate.env ]; then
+    # Set up by "certloomd setup": migrate before the new version starts.
+    (set -a; . /etc/certloom/migrate.env; certloomd migrate) ||
+        echo "certloomd: migrations failed; run 'sudo certloomd setup' to retry" >&2
+else
+    echo "certloomd installed. Run 'sudo certloomd setup' to configure and start it."
+fi
 
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload >/dev/null 2>&1 || true

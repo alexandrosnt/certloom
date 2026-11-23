@@ -40,6 +40,8 @@ import (
 const usage = `certloomd: certificate lifecycle management control plane
 
 Usage:
+  certloomd setup       configure a package install on this host (root): database,
+                   key, TLS certificate, settings, service, first organization
   certloomd serve       run API, UI, scheduler and workers
   certloomd migrate     apply database migrations (uses CERTLOOM_MIGRATE_DATABASE_URL)
   certloomd bootstrap   create an organization and print a one-time owner token
@@ -84,6 +86,8 @@ func main() {
 		err = serve(ctx, log, os.Args[2:])
 	case "migrate":
 		err = migrate(ctx)
+	case "setup":
+		err = setup(ctx, os.Args[2:])
 	case "bootstrap":
 		err = bootstrap(ctx, os.Args[2:])
 	case "audit-verify-export":
@@ -157,26 +161,31 @@ func bootstrap(ctx context.Context, args []string) error {
 		return err
 	}
 	defer db.Close()
-	o, err := db.CreateOrg(ctx, *org)
-	if err != nil {
-		return fmt.Errorf("create org: %w", err)
-	}
-	var plain string
-	err = db.WithOrg(ctx, o.ID, func(tx *store.Tx) error {
-		t, v, err := tx.CreateToken(ctx, "bootstrap", store.RoleOwner, "system:bootstrap", *ttl)
-		if err != nil {
-			return err
-		}
-		plain = v.RevealString()
-		return audit.Write(ctx, tx, &audit.Event{OrgID: o.ID, Actor: "system:bootstrap", Action: "org.bootstrap",
-			ResourceType: "org", ResourceID: o.ID, Detail: map[string]any{"name": *org, "token_id": t.ID, "ttl_seconds": int(ttl.Seconds())}})
-	})
+	id, plain, err := createOrg(ctx, db, *org, *ttl)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "Created organization %q (%s).\nOwner token (shown once, expires in %s):\n", *org, o.ID, *ttl)
+	fmt.Fprintf(os.Stderr, "Created organization %q (%s).\nOwner token (shown once, expires in %s):\n", *org, id, *ttl)
 	fmt.Println(plain)
 	return nil
+}
+
+// createOrg creates an organization and a one-time owner token for it.
+func createOrg(ctx context.Context, db *store.DB, name string, ttl time.Duration) (id, token string, err error) {
+	o, err := db.CreateOrg(ctx, name)
+	if err != nil {
+		return "", "", fmt.Errorf("create org: %w", err)
+	}
+	err = db.WithOrg(ctx, o.ID, func(tx *store.Tx) error {
+		t, v, err := tx.CreateToken(ctx, "bootstrap", store.RoleOwner, "system:bootstrap", ttl)
+		if err != nil {
+			return err
+		}
+		token = v.RevealString()
+		return audit.Write(ctx, tx, &audit.Event{OrgID: o.ID, Actor: "system:bootstrap", Action: "org.bootstrap",
+			ResourceType: "org", ResourceID: o.ID, Detail: map[string]any{"name": name, "token_id": t.ID, "ttl_seconds": int(ttl.Seconds())}})
+	})
+	return o.ID, token, err
 }
 
 func serve(ctx context.Context, log *slog.Logger, args []string) error {

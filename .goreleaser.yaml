@@ -153,6 +153,10 @@ nfpms:
       certloom control plane.
       Certificate inventory, monitoring, renewal workflows and the API, web UI
       and agent endpoint. Needs PostgreSQL 16 or later.
+    overrides:
+      deb:
+        # Debian 13 and Ubuntu 24.04 ship 16 or later; "certloomd setup" checks.
+        recommends: [postgresql]
     contents:
       - src: deploy/systemd/certloomd.service
         dst: /usr/lib/systemd/system/certloomd.service

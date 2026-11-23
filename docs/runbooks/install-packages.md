@@ -34,59 +34,50 @@ After installing, enroll and start the agent as in `docs/runbooks/agent.md`.
 
 ## certloomd
 
-The package installs `/usr/bin/certloomd`, the `certloom` CLI, the
-`certloomd.service` unit, a `certloom` system user and
-`/etc/certloom/certloomd.env`. It does not set up PostgreSQL or start the
-service.
+```sh
+sudo apt-get install certloomd      # also installs PostgreSQL
+sudo certloomd setup
+```
 
-1. Create the database and the schema-owner role. PostgreSQL 16 or later; the
-   owner needs CREATEROLE because the migrations create the runtime role
-   `certloom_app`:
-   ```sh
-   sudo apt-get install postgresql          # or use an existing server
-   sudo -u postgres psql -c "CREATE ROLE certloom_owner LOGIN CREATEROLE PASSWORD 'owner-password'" \
-                         -c "CREATE DATABASE certloom OWNER certloom_owner"
-   ```
-2. Run the migrations as the owner role, then give the runtime role a
-   password. Repeat the migrations after every upgrade:
-   ```sh
-   CERTLOOM_MIGRATE_DATABASE_URL='postgres://certloom_owner:owner-password@127.0.0.1/certloom?sslmode=disable' certloomd migrate
-   sudo -u postgres psql -c "ALTER ROLE certloom_app LOGIN PASSWORD 'app-password'"
-   ```
-   `sslmode=disable` is fine for a database on the same host. For a remote
-   one use `sslmode=verify-full` with a certificate that matches its name.
-3. Create the key-encryption key and TLS files, readable by the service:
-   ```sh
-   sudo sh -c 'umask 027; certloomd gen-kek > /etc/certloom/kek'
-   sudo chgrp certloom /etc/certloom/kek
-   # server.crt / server.key into /etc/certloom/tls, group certloom, key mode 0640.
-   # For a quick test, a self-signed one:
-   sudo mkdir -p /etc/certloom/tls
-   sudo openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 365 \
-     -keyout /etc/certloom/tls/server.key -out /etc/certloom/tls/server.crt \
-     -subj /CN=localhost -addext subjectAltName=DNS:localhost,IP:127.0.0.1
-   sudo chgrp certloom /etc/certloom/tls/server.key /etc/certloom/tls/server.crt
-   sudo chmod 640 /etc/certloom/tls/server.key
-   ```
-4. Edit `/etc/certloom/certloomd.env`: the runtime role's database URL
-   (`certloom_app` and its password), the listen address, and the name agents
-   use to reach this host (`CERTLOOM_AGENT_SERVER_NAMES`,
-   `CERTLOOM_AGENT_PUBLIC_URL`).
-5. `sudo systemctl enable --now certloomd` and check `journalctl -u certloomd`.
-6. Create the first organization and its one-time owner token, then sign in at
-   `https://<host>:8443/`:
-   ```sh
-   sudo -u certloom sh -c 'set -a; . /etc/certloom/certloomd.env; certloomd bootstrap --org "Example Corp"'
-   ```
+`setup` creates the database, the key-encryption key and a self-signed TLS
+certificate, fills in `/etc/certloom/certloomd.env`, starts the service and
+prints the web UI address and a one-time sign-in token. Running it again is
+safe: it applies migrations and restarts the service.
+
+- `--hostname`: the name agents and browsers use to reach this host
+  (default: the host name). It goes into the TLS certificate.
+- `--org`: name of the first organization (default `default`).
+- `--owner-database-url`: use an existing PostgreSQL 16+ instead of the
+  local one. The role needs CREATEROLE and must own the database; the URL must
+  use `sslmode=verify-full`.
+
+### How the local database is secured
+
+Even on the same host, certloomd talks to PostgreSQL only over TLS 1.3 with full
+certificate verification. `setup` creates a one-off CA, issues PostgreSQL a
+certificate for `127.0.0.1` and `localhost`, and discards the CA's private
+key, so no other certificate can pass. `pg_hba.conf` then refuses the certloom
+roles on any connection without TLS. The new certificate replaces the
+server's default one (Debian's snakeoil) for every client of that PostgreSQL.
+
+### Files
+
+| File | What it holds |
+|---|---|
+| `/etc/certloom/certloomd.env` | Settings read by `certloomd.service` |
+| `/etc/certloom/kek` | Key-encryption key. **Back it up apart from the database**; a restore needs both |
+| `/etc/certloom/migrate.env` | Schema-owner URL (root only); package upgrades use it to migrate |
+| `/etc/certloom/tls/` | Web UI and API certificate. Replace with one from your CA, then `systemctl restart certloomd` |
+| `/etc/certloom/postgres-ca.crt` | CA that signed the local PostgreSQL certificate |
 
 The unit runs certloomd unprivileged with a read-only file system; it cannot
 bind ports below 1024. Put a load balancer or reverse proxy in front for 443.
 
 ## Upgrades
 
-`apt-get upgrade` or `dnf upgrade` installs the new version and restarts a
-running service. For certloomd, run the migrations first (step 2), or stop the
-service, upgrade, migrate, start.
+`apt-get upgrade` or `dnf upgrade` installs the new version. On a host set up
+with `certloomd setup`, the package applies the database migrations and
+restarts the service by itself.
 
 ## Package signing key rotation
 

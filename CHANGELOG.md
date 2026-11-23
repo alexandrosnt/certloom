@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+- `certloomd setup` configures a package install in one step: local database,
+  key-encryption key, TLS certificate, settings, service and the first
+  organization with a sign-in token. The local database is reached only over
+  TLS 1.3 with full verification (one-off CA whose key is discarded; `pg_hba`
+  refuses the certloom roles without TLS). Package upgrades of a host set up
+  this way migrate the database by themselves. The deb package recommends
+  `postgresql`.
+
 ### Fixed
 - certloomd ignored a configured KEK unless the agent listener was on, so a package
   install without `CERTLOOM_AGENT_LISTEN` could not store webhook, EAB, DNS or CA
