@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+- certloomd ignored a configured KEK unless the agent listener was on, so a package
+  install without `CERTLOOM_AGENT_LISTEN` could not store webhook, EAB, DNS or CA
+  credentials and used a per-process CSRF key. The packaged `certloomd.env` now
+  enables the agent listener, and the install runbook gives every setup step.
+
 ## 0.1.0-rc.1 - 2026-11-23
 
 First release candidate. Everything below is new since the project started;

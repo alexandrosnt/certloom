@@ -39,21 +39,45 @@ The package installs `/usr/bin/certloomd`, the `certloom` CLI, the
 `/etc/certloom/certloomd.env`. It does not set up PostgreSQL or start the
 service.
 
-1. Create the database and the two roles as in `deploy/compose` (owner role
-   `certloom_owner`, runtime role `certloom_app`). PostgreSQL 16 or later.
-2. Run the migrations as the owner role. Repeat after every upgrade:
+1. Create the database and the schema-owner role. PostgreSQL 16 or later; the
+   owner needs CREATEROLE because the migrations create the runtime role
+   `certloom_app`:
    ```sh
-   sudo -u certloom CERTLOOM_MIGRATE_DATABASE_URL='postgres://certloom_owner:...@127.0.0.1/certloom' certloomd migrate
+   sudo apt-get install postgresql          # or use an existing server
+   sudo -u postgres psql -c "CREATE ROLE certloom_owner LOGIN CREATEROLE PASSWORD 'owner-password'" \
+                         -c "CREATE DATABASE certloom OWNER certloom_owner"
    ```
+2. Run the migrations as the owner role, then give the runtime role a
+   password. Repeat the migrations after every upgrade:
+   ```sh
+   CERTLOOM_MIGRATE_DATABASE_URL='postgres://certloom_owner:owner-password@127.0.0.1/certloom?sslmode=disable' certloomd migrate
+   sudo -u postgres psql -c "ALTER ROLE certloom_app LOGIN PASSWORD 'app-password'"
+   ```
+   `sslmode=disable` is fine for a database on the same host. For a remote
+   one use `sslmode=verify-full` with a certificate that matches its name.
 3. Create the key-encryption key and TLS files, readable by the service:
    ```sh
    sudo sh -c 'umask 027; certloomd gen-kek > /etc/certloom/kek'
    sudo chgrp certloom /etc/certloom/kek
-   # server.crt / server.key into /etc/certloom/tls, group certloom, key mode 0640
+   # server.crt / server.key into /etc/certloom/tls, group certloom, key mode 0640.
+   # For a quick test, a self-signed one:
+   sudo mkdir -p /etc/certloom/tls
+   sudo openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 365 \
+     -keyout /etc/certloom/tls/server.key -out /etc/certloom/tls/server.crt \
+     -subj /CN=localhost -addext subjectAltName=DNS:localhost,IP:127.0.0.1
+   sudo chgrp certloom /etc/certloom/tls/server.key /etc/certloom/tls/server.crt
+   sudo chmod 640 /etc/certloom/tls/server.key
    ```
-4. Edit `/etc/certloom/certloomd.env` (database URL of the runtime role,
-   listen address, TLS paths, OIDC).
+4. Edit `/etc/certloom/certloomd.env`: the runtime role's database URL
+   (`certloom_app` and its password), the listen address, and the name agents
+   use to reach this host (`CERTLOOM_AGENT_SERVER_NAMES`,
+   `CERTLOOM_AGENT_PUBLIC_URL`).
 5. `sudo systemctl enable --now certloomd` and check `journalctl -u certloomd`.
+6. Create the first organization and its one-time owner token, then sign in at
+   `https://<host>:8443/`:
+   ```sh
+   sudo -u certloom sh -c 'set -a; . /etc/certloom/certloomd.env; certloomd bootstrap --org "Example Corp"'
+   ```
 
 The unit runs certloomd unprivileged with a read-only file system; it cannot
 bind ports below 1024. Put a load balancer or reverse proxy in front for 443.

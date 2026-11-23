@@ -235,14 +235,21 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 	} else {
 		log.Warn("audit export is not configured (CERTLOOM_AUDIT_EXPORT); the audit trail is only internally consistent and a database owner could rewrite it undetectably")
 	}
-	if agentAddr := os.Getenv("CERTLOOM_AGENT_LISTEN"); agentAddr != "" {
-		k, err := kek.FromEnv()
-		if err != nil {
-			return fmt.Errorf("agent support needs a KEK: %w", err)
-		}
+	agentAddr := os.Getenv("CERTLOOM_AGENT_LISTEN")
+	// A configured KEK is loaded even without the agent listener: webhooks,
+	// EAB, DNS and CA credentials and the CSRF key depend on it too.
+	switch k, err := kek.FromEnv(); {
+	case err == nil:
 		if svc.PKI, err = agentpki.LoadOrCreate(ctx, db.Pool, k); err != nil {
 			return fmt.Errorf("agent PKI: %w", err)
 		}
+	case errors.Is(err, kek.ErrMissing) && agentAddr == "":
+	case errors.Is(err, kek.ErrMissing):
+		return fmt.Errorf("agent support needs a KEK: %w", err)
+	default:
+		return err
+	}
+	if agentAddr != "" {
 		// Extra trust for private ACME directories (ARI polling), e.g. step-ca, Vault, Pebble.
 		if f := os.Getenv("CERTLOOM_ACME_CA_FILE"); f != "" {
 			pool, perr := x509.SystemCertPool()
