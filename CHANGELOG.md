@@ -10,6 +10,11 @@
   refuses the certloom roles without TLS). Package upgrades of a host set up
   this way migrate the database by themselves. The deb package recommends
   `postgresql`.
+- Getting-started guides, each tested end to end on a fresh host: an overview
+  of what certloom does (`docs/overview.md`), monitoring with OpenTofu and no
+  agent, and renewal on Linux with nginx.
+- `certloom deployment create --endpoint` (and the API's `endpoint` field)
+  also takes the endpoint's host or `host:port` instead of its id.
 
 ### Fixed
 - certloomd ignored a configured KEK unless the agent listener was on, so a package

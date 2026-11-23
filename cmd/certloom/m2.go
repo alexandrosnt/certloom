@@ -212,7 +212,7 @@ func deploymentCmd() *cobra.Command {
 	create.Flags().StringVar(&issuer, "issuer", "", "issuer id or name (not needed with --template)")
 	create.Flags().StringVar(&tmpl, "template", "", "certificate template: fixes issuer and challenge, checks the names")
 	create.Flags().StringVar(&keyAlg, "key-algorithm", "", "key the agent generates (default: the template's first, or ecdsa-p256)")
-	create.Flags().StringVar(&endpoint, "endpoint", "", "endpoint id for external verification (recommended)")
+	create.Flags().StringVar(&endpoint, "endpoint", "", "endpoint for external verification: id, host or host:port (recommended)")
 	create.Flags().StringSliceVar(&sans, "san", nil, "DNS name (repeatable)")
 	_ = create.MarkFlagRequired("san")
 	windowHelp := `maintenance window for activating new certificates, e.g. "Mon-Fri 02:00-05:00 Europe/Athens" (days: Mon..Sun, ranges, lists or daily)`

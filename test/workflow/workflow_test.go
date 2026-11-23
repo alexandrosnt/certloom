@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -386,6 +387,45 @@ func TestDeploymentSANsMustBeAllowedByAgent(t *testing.T) {
 	}
 	if app.SANAllowed("a.b.wf.test", []string{"*.wf.test"}, false) || !app.SANAllowed("a.wf.test", []string{"*.wf.test"}, false) {
 		t.Fatal("wildcard allowlist must match exactly one label")
+	}
+}
+
+func TestDeploymentEndpointByHost(t *testing.T) {
+	refs := []string{"API.wf.test", "api.wf.test:443", ""}
+	e := newEnvWith(t, testpki.Options{}, func(c *agent.Config) {
+		for i := range refs {
+			tg := c.Targets[0]
+			tg.Name, tg.LiveLink = fmt.Sprintf("api%d", i), filepath.Join(c.StateDir, "live", fmt.Sprintf("api%d", i))
+			c.Targets = append(c.Targets, tg)
+		}
+	})
+	if _, err := e.svc.CreateScope(ctx, e.owner, "wf", store.ScopeConfig{AllowHosts: []string{"*.wf.test"}}); err != nil {
+		t.Fatal(err)
+	}
+	ep, err := e.svc.AddEndpoint(ctx, e.owner, app.AddEndpointInput{Host: "api.wf.test", Scope: "wf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.CreateLineage(ctx, e.owner, "api", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	refs[2] = ep.ID
+	for i, ref := range refs {
+		d, err := e.svc.CreateDeployment(ctx, e.owner, app.DeploymentInput{Lineage: "api", Agent: "web-01", Target: fmt.Sprintf("api%d", i),
+			Issuer: "fake", SANs: []string{"api.wf.test"}, Endpoint: ref})
+		if err != nil {
+			t.Fatalf("%s: %v", ref, err)
+		}
+		if d.EndpointID == nil || *d.EndpointID != ep.ID {
+			t.Fatalf("%s: endpoint %v, want %s", ref, d.EndpointID, ep.ID)
+		}
+	}
+	for _, ref := range []string{"api.wf.test:8443", "other.wf.test"} {
+		_, err := e.svc.CreateDeployment(ctx, e.owner, app.DeploymentInput{Lineage: "api", Agent: "web-01", Target: "www",
+			Issuer: "fake", SANs: []string{"api.wf.test"}, Endpoint: ref})
+		if !errors.Is(err, app.ErrInvalid) || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("%s: want not found, got %v", ref, err)
+		}
 	}
 }
 

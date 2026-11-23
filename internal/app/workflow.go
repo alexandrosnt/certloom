@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -203,11 +205,11 @@ func (s *Service) CreateDeployment(ctx context.Context, p authz.Principal, in De
 		d = &store.Deployment{LineageID: l.ID, AgentID: a.ID, Target: in.Target, IssuerID: iss.ID, SANs: in.SANs,
 			MaintenanceWindow: normWindow(in.Window), WindowEmergency: in.Emergency, Challenge: in.Challenge}
 		if in.Endpoint != "" {
-			e, err := tx.GetEndpoint(ctx, in.Endpoint)
+			e, err := endpointByRef(ctx, tx, in.Endpoint)
 			if err != nil {
-				return invalid("endpoint %q not found", in.Endpoint)
+				return err
 			}
-			d.EndpointID = &e.ID
+			d.EndpointID, in.Endpoint = &e.ID, e.ID
 		}
 		pv, err := tx.ActivePolicy(ctx)
 		if err != nil {
@@ -1168,4 +1170,34 @@ func verifySNI(sans []string) string {
 		}
 	}
 	return "certloom-verify." + strings.TrimPrefix(sans[0], "*.")
+}
+
+// endpointByRef finds an endpoint by id, or by "host" or "host:port" (port
+// 443 when omitted) so callers need not look the id up first.
+func endpointByRef(ctx context.Context, tx *store.Tx, ref string) (*store.Endpoint, error) {
+	if e, err := tx.GetEndpoint(ctx, ref); err == nil {
+		return e, nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	host, port := ref, 443
+	if h, p, err := net.SplitHostPort(ref); err == nil {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, invalid("endpoint %q: bad port", ref)
+		}
+		host, port = h, n
+	}
+	found, err := tx.EndpointsByAddress(ctx, strings.ToLower(host), port)
+	if err != nil {
+		return nil, err
+	}
+	switch len(found) {
+	case 0:
+		return nil, invalid("endpoint %q not found (add it with certloom endpoint add)", ref)
+	case 1:
+		return found[0], nil
+	default:
+		return nil, invalid("endpoint %q matches %d endpoints with different SNI; use the endpoint id", ref, len(found))
+	}
 }

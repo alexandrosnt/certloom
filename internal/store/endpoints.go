@@ -162,9 +162,18 @@ func (tx *Tx) GetEndpoint(ctx context.Context, id string) (*Endpoint, error) {
 	return scanEndpoint(tx.QueryRow(ctx, `SELECT `+endpointCols+` FROM endpoints WHERE id = $1`, id))
 }
 
+// EndpointsByAddress returns the endpoints probing host:port, whatever their SNI.
+func (tx *Tx) EndpointsByAddress(ctx context.Context, host string, port int) ([]*Endpoint, error) {
+	return tx.queryEndpoints(ctx, `SELECT `+endpointCols+` FROM endpoints WHERE host = $1 AND port = $2 ORDER BY sni`, host, port)
+}
+
 // ListEndpoints returns all endpoints.
 func (tx *Tx) ListEndpoints(ctx context.Context) ([]*Endpoint, error) {
-	rows, err := tx.Query(ctx, `SELECT `+endpointCols+` FROM endpoints ORDER BY host, port, sni`)
+	return tx.queryEndpoints(ctx, `SELECT `+endpointCols+` FROM endpoints ORDER BY host, port, sni`)
+}
+
+func (tx *Tx) queryEndpoints(ctx context.Context, sql string, args ...any) ([]*Endpoint, error) {
+	rows, err := tx.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}

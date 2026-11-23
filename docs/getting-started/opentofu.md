@@ -139,6 +139,6 @@ cannot be reached. Change the thresholds and escalation with the
 
 ## Next
 
-- Renew certificates automatically on your servers: [runbooks/agent.md](../runbooks/agent.md)
+- Renew certificates automatically on Linux with nginx: [linux-nginx.md](linux-nginx.md)
 - Watch AWS, Azure, Google Cloud or Cloudflare certificates: [runbooks/cloud.md](../runbooks/cloud.md)
 - Everything certloom can do: [overview.md](../overview.md)
