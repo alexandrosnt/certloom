@@ -139,6 +139,13 @@ type Spec struct {
 		// only solvers configured on each host are used (ADR-0018).
 		CentralCredentials string `json:"centralCredentials,omitempty"`
 	} `json:"dns,omitempty"`
+	Cloud struct {
+		// CentralCredentials is "allowed" (default) or "forbidden". Forbidden
+		// stops certloomd from storing cloud credentials for the cloud
+		// accounts it reads; accounts using its ambient identity still work
+		// (ADR-0034).
+		CentralCredentials string `json:"centralCredentials,omitempty"`
+	} `json:"cloud,omitempty"`
 	Templates struct {
 		// Required makes every new deployment use a certificate template (ADR-0020).
 		Required bool `json:"required,omitempty"`
@@ -168,6 +175,7 @@ func Default() *Document {
 	d.Spec.Retention.Observations = Duration(DefaultObservationRetention)
 	d.Spec.Approvals.Deployments = ApprovalOptional
 	d.Spec.DNS.CentralCredentials = CentralCredentialsAllowed
+	d.Spec.Cloud.CentralCredentials = CentralCredentialsAllowed
 	d.Spec.Approvals.ExpireAfter = Duration(7 * 24 * time.Hour)
 	d.Spec.Exceptions.MaxDuration = Duration(90 * 24 * time.Hour)
 	d.Spec.Alerts.AckExpiry = Duration(7 * 24 * time.Hour)
@@ -239,6 +247,9 @@ func (d *Document) fill() {
 	if s.DNS.CentralCredentials == "" {
 		s.DNS.CentralCredentials = def.Spec.DNS.CentralCredentials
 	}
+	if s.Cloud.CentralCredentials == "" {
+		s.Cloud.CentralCredentials = def.Spec.Cloud.CentralCredentials
+	}
 }
 
 // ValidationError lists every problem found.
@@ -297,6 +308,9 @@ func (d *Document) Validate() error {
 	}
 	if c := s.DNS.CentralCredentials; c != CentralCredentialsAllowed && c != CentralCredentialsForbidden {
 		add("dns.centralCredentials must be %q or %q", CentralCredentialsAllowed, CentralCredentialsForbidden)
+	}
+	if c := s.Cloud.CentralCredentials; c != CentralCredentialsAllowed && c != CentralCredentialsForbidden {
+		add("cloud.centralCredentials must be %q or %q", CentralCredentialsAllowed, CentralCredentialsForbidden)
 	}
 	if e := time.Duration(s.Approvals.ExpireAfter); e < time.Hour || e > 30*24*time.Hour {
 		add("approvals.expireAfter must be between 1h and 30d")

@@ -11,23 +11,23 @@ outage, and can renew the ones on your own servers for you.
                            |
                            v
    +-----------------------------------------------+
-   | certloomd  (one server you install)           |      checks websites
-   |  - list of all certificates                   | ---> and services over
-   |  - checks and alerts (email, webhook)         |      the network
-   |  - renewal schedule                           |      (no agent needed)
+   | certloomd  (one server you install)           |      checks websites and
+   |  - list of all certificates                   | ---> services over the network,
+   |  - checks and alerts (email, webhook)         |      reads AWS, Azure, Google,
+   |  - renewal schedule                           |      Cloudflare (no agent needed)
    +-----------------------------------------------+
                            ^
                            | only if you want automatic renewal
                            | or need to look inside a machine
                            v
-   certloom-agent  on a server, in Kubernetes, or in a cloud account
+   certloom-agent  on a server or in Kubernetes
 ```
 
 | Piece | What it is | Do you need it? |
 |---|---|---|
 | **certloomd** | The server. Keeps the list of certificates, checks them, sends alerts, plans renewals. | Yes, one. |
 | **OpenTofu / Terraform provider** | Describe what to watch and where alerts go in `.tf` files. | Optional. Same for the CLI and the web UI: use whichever you like. |
-| **certloom-agent** | Small program on a machine. Renews and installs certificates there, and reports what it finds on disk, in Kubernetes or in a cloud account. | Only for renewal or for looking inside a machine. |
+| **certloom-agent** | Small program on a machine. Renews and installs certificates there, and reports what it finds on disk or in Kubernetes. It can also read cloud accounts from inside the cloud, if you prefer that to the server reading them. | Only for renewal or for looking inside a machine. |
 
 ## What you can do, and what it needs
 
@@ -38,7 +38,7 @@ outage, and can renew the ones on your own servers for you.
 | Renew and install certificates on Linux with nginx (Let's Encrypt or any ACME CA) | Yes, on that server | [Linux and nginx](getting-started/linux-nginx.md) |
 | The same on Windows with IIS | Yes | [Windows and IIS](getting-started/windows-iis.md) |
 | See cert-manager certificates in Kubernetes | Yes, in the cluster | [Kubernetes](getting-started/kubernetes.md) |
-| See certificates in AWS, Azure, Google Cloud or Cloudflare | Yes, in the cloud account | [runbooks/cloud.md](runbooks/cloud.md) |
+| See certificates in AWS, Azure, Google Cloud or Cloudflare | No (or one in the cloud, if you prefer) | [Cloud](getting-started/cloud.md) |
 | Push your own root CAs to servers' trust stores | Yes | [runbooks/trust-bundles.md](runbooks/trust-bundles.md) |
 
 ## Why renewal needs an agent

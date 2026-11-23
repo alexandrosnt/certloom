@@ -37,23 +37,9 @@ func (s *Service) importObservations(ctx context.Context, tx *store.Tx, agentID 
 	now := s.now()
 	n := 0
 	importPEM := func(chain, source string) error {
-		if chain == "" {
-			return nil
-		}
-		parsed, err := certparse.Parse([]byte(chain), secret.Value{})
-		if err != nil {
-			return nil //nolint:nilerr // unparsable observed data is skipped
-		}
-		for _, c := range parsed.Certificates {
-			ins, err := tx.UpsertCertificate(ctx, c, source)
-			if err != nil {
-				return err
-			}
-			if ins {
-				n++
-			}
-		}
-		return nil
+		added, err := importChain(ctx, tx, chain, source)
+		n += added
+		return err
 	}
 	for i := range inv.IIS {
 		if err := importPEM(inv.IIS[i].ChainPEM, "agent"); err != nil {
@@ -311,4 +297,27 @@ func (s *Service) AgentInventory(ctx context.Context, p authz.Principal, ref str
 		return nil
 	})
 	return out, err
+}
+
+// importChain adds the certificates of an observed PEM chain to the
+// inventory and returns how many were new. Unparsable data is skipped.
+func importChain(ctx context.Context, tx *store.Tx, chain, source string) (int, error) {
+	if chain == "" {
+		return 0, nil
+	}
+	parsed, err := certparse.Parse([]byte(chain), secret.Value{})
+	if err != nil {
+		return 0, nil //nolint:nilerr // unparsable observed data is skipped
+	}
+	n := 0
+	for _, c := range parsed.Certificates {
+		ins, err := tx.UpsertCertificate(ctx, c, source)
+		if err != nil {
+			return n, err
+		}
+		if ins {
+			n++
+		}
+	}
+	return n, nil
 }

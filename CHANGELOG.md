@@ -3,6 +3,15 @@
 ## Unreleased
 
 ### Added
+- Cloud accounts read by certloomd itself, without an agent (ADR-0034): AWS
+  Certificate Manager and Private CA, Azure Key Vault, Google Certificate
+  Manager and CA Service, Cloudflare. `certloom cloud-account`,
+  `/api/v1/cloud-accounts` and the OpenTofu resource `certloom_cloud_account`.
+  certloomd uses its own cloud identity, or a read-only key stored encrypted
+  with the KEK and never returned. Settings cannot name local files or
+  endpoints. New permission `cloud:manage` and policy
+  `cloud.centralCredentials`. Guide: `docs/getting-started/cloud.md`.
+- `certloom agent observations` also shows cloud objects.
 - `certloomd setup` configures a package install in one step: local database,
   key-encryption key, TLS certificate, settings, service and the first
   organization with a sign-in token. The local database is reached only over
@@ -12,13 +21,15 @@
   `postgresql`.
 - Getting-started guides, each tested end to end on a fresh host: an overview
   of what certloom does (`docs/overview.md`), monitoring with OpenTofu and no
-  agent, renewal on Linux with nginx, renewal on Windows with IIS, and
-  cert-manager observation in Kubernetes. The Windows guide runs on a hosted
-  Windows Server with IIS in the `guides` workflow.
+  agent, renewal on Linux with nginx, renewal on Windows with IIS,
+  cert-manager observation in Kubernetes, and cloud accounts. The Windows
+  guide runs on a hosted Windows Server with IIS in the `guides` workflow.
 - `certloom deployment create --endpoint` (and the API's `endpoint` field)
   also takes the endpoint's host or `host:port` instead of its id.
 
 ### Changed
+- The cloud collectors moved from the agent into a package that the agent and
+  certloomd share; agent configuration and behavior are unchanged.
 - `deploy/kubernetes/agent.yaml` uses the released image from GHCR instead of
   a locally built one; the release workflow checks that it names the version
   being released.

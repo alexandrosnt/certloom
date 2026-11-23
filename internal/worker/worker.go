@@ -133,6 +133,7 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 	periodic("eab", 10*time.Minute, svc.SweepEABPools)
 	periodic("inventory", time.Minute, svc.RequestDueInventories)
 	periodic("trust", 5*time.Minute, svc.SendDueTrustBundles)
+	periodic("cloud", time.Minute, svc.ScheduleCloudScans)
 	periodic("prune", time.Hour, func(ctx context.Context) error {
 		r, err := svc.Prune(ctx)
 		if r.Observations+r.IdempotencyKeys+r.Sessions > 0 {
@@ -147,7 +148,7 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 		})
 	}
 
-	kinds := []string{app.JobKindProbe, app.JobKindCertSweep}
+	kinds := []string{app.JobKindProbe, app.JobKindCertSweep, app.JobKindCloudScan}
 	if svc.PKI != nil {
 		kinds = append(kinds, app.JobKindAdvance, app.JobKindARICheck)
 		periodic("renewals", cfg.ScheduleEvery, func(ctx context.Context) error {
@@ -184,6 +185,8 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 						err = svc.RunProbeJob(jctx, j)
 					case app.JobKindCertSweep:
 						err = svc.RunCertSweep(jctx, j)
+					case app.JobKindCloudScan:
+						err = svc.RunCloudScan(jctx, j)
 					case app.JobKindAdvance:
 						err = svc.RunAdvance(jctx, j)
 					case app.JobKindARICheck:

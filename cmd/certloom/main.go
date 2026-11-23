@@ -48,7 +48,7 @@ Configuration: ` + "`certloom login`" + ` writes server and token to the user co
 (0600). CERTLOOM_SERVER, CERTLOOM_TOKEN and CERTLOOM_CA_FILE override it.`,
 	}
 	root.PersistentFlags().StringVarP(&output, "output", "o", "table", "output format: table or json")
-	root.AddCommand(loginCmd(), logoutCmd(), memberCmd(), policyCmd(), agentCmd(), issuerCmd(), templateCmd(), webhookCmd(), dnsSolverCmd(), deploymentCmd(), caCmd(), trustCmd(), approvalCmd(), exceptionCmd(), runCmd(), whoamiCmd(), statusCmd(), doctorCmd(), versionCmd(), inventoryCmd(), endpointCmd(),
+	root.AddCommand(loginCmd(), logoutCmd(), memberCmd(), policyCmd(), agentCmd(), issuerCmd(), templateCmd(), webhookCmd(), dnsSolverCmd(), cloudAccountCmd(), deploymentCmd(), caCmd(), trustCmd(), approvalCmd(), exceptionCmd(), runCmd(), whoamiCmd(), statusCmd(), doctorCmd(), versionCmd(), inventoryCmd(), endpointCmd(),
 		scopeCmd(), teamCmd(), lineageCmd(), findingCmd(), alertCmd(), channelCmd(), tokenCmd(), auditCmd(), automationCmd())
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

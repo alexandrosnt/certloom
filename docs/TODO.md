@@ -92,6 +92,10 @@ Not done yet, roughly in the order I want to tackle it.
   EventBridge push are not built; polling only.
 - Classic Compute Engine SSL certificates and load balancer attachments in Google are
   not listed.
+- Cloud accounts read by certloomd: a scan has 75 seconds (job lease); very large
+  accounts should be split. Stored keys come from the database only; vault references
+  with the ADR-0009 Phase 6 providers. No web UI page for cloud accounts yet.
+- Run the AWS guide once against a real account (tested with moto only).
 
 ## Control plane
 - systemd unit and a non-Docker install guide for `certloomd`. With a distro PostgreSQL

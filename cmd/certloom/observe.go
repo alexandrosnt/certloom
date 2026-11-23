@@ -24,6 +24,7 @@ func observationsCmd() *cobra.Command {
 					IIS        []agentproto.IISBinding     `json:"iis"`
 					WinACME    []agentproto.WinACMERenewal `json:"win_acme"`
 					Kubernetes *agentproto.KubeInventory   `json:"kubernetes"`
+					Cloud      *agentproto.CloudInventory  `json:"cloud"`
 				} `json:"inventory"`
 			}
 			if err := c.do("GET", "/api/v1/agents/"+url.PathEscape(args[0])+"/inventory", nil, &v); err != nil {
@@ -80,6 +81,9 @@ func observationsCmd() *cobra.Command {
 				for _, e := range k.Errors {
 					fmt.Fprintf(w, "\nnot listed: %s\n", e)
 				}
+			}
+			if inv.Cloud != nil {
+				printCloud(w, inv.Cloud)
 			}
 			return w.Flush()
 		})}

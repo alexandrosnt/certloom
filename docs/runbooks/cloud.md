@@ -5,7 +5,16 @@ Key Vault, Google Certificate Manager, Google CA Service and Cloudflare, and rai
 findings when the service will not renew them in time (ADR-0024). Nothing in the
 cloud is changed.
 
-A `certloom-agent` does the reading. Run it where it can use the cloud's own identity:
+There are two ways to read them. The simpler one needs no agent: `certloomd`
+reads the cloud itself for each cloud account you create (`certloom
+cloud-account`, or the `certloom_cloud_account` OpenTofu resource), with its own
+cloud identity or a stored read-only key. That is described in
+[getting-started/cloud.md](../getting-started/cloud.md) and ADR-0034; the
+permissions and findings below are the same.
+
+This runbook covers the other way, for when the certloom server must not reach
+the cloud or hold cloud keys: a `certloom-agent` does the reading. Run it where
+it can use the cloud's own identity:
 an EC2 instance or ECS task with a role, an AKS or Azure VM with a managed identity, a
 GKE workload or GCE VM with a service account. The control plane needs no cloud
 access and holds no cloud credentials.

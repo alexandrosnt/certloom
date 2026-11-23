@@ -41,12 +41,14 @@ const (
 	ManageWebhooks Permission = "webhooks:manage"
 	// trust bundles and their assignment to agent trust stores (ADR-0030)
 	ManageTrust Permission = "trust:manage"
+	// cloud accounts read by certloomd, including their credentials (ADR-0034)
+	ManageCloud Permission = "cloud:manage"
 )
 
 var grants = map[string][]Permission{
 	"owner": {ViewInventory, ImportCerts, ManageEndpoints, ManageScopes, ManageOwnership, AckAlerts,
 		ManageChannels, ManageTokens, ViewAudit, ManageAutomation, ManageMembers, ManagePolicy,
-		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions, ManageDNS, ManageTemplates, ManageWebhooks, ManageTrust},
+		ManageAgents, ManageIssuers, ManageDeployments, RunRenewals, RequestDeployments, ApproveRequests, RequestExceptions, ManageDNS, ManageTemplates, ManageWebhooks, ManageTrust, ManageCloud},
 	"operator":            {ViewInventory, ImportCerts, ManageEndpoints, ManageOwnership, AckAlerts, RunRenewals, RequestExceptions},
 	"viewer":              {ViewInventory},
 	"auditor":             {ViewInventory, ViewAudit},

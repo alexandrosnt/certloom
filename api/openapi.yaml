@@ -1089,6 +1089,102 @@ paths:
       responses:
         "204": { description: Removed }
         "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/cloud-accounts:
+    get:
+      tags: [inventory]
+      summary: List cloud accounts certloomd reads itself (ADR-0034). Secrets are never returned; has_secret says whether one is stored.
+      responses:
+        "200": { $ref: "#/components/responses/List" }
+    post:
+      tags: [inventory]
+      summary: Add a cloud account (cloud:manage). certloomd reads its certificate services read-only; the first scan starts at once.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, provider, settings]
+              properties:
+                name: { type: string, description: "1-64 letters, digits, '.', '_' or '-'" }
+                provider: { type: string, enum: [aws, azure, gcp, cloudflare] }
+                credential: { type: string, enum: [ambient, stored], default: ambient, description: "ambient uses certloomd's own cloud identity (instance role, workload identity, managed identity); stored keeps the secret encrypted with the KEK. Cloudflare needs stored." }
+                settings:
+                  type: object
+                  description: "aws {regions, assume_role_arn, external_id, private_ca}; azure {vaults, tenant_id, client_id}; gcp {project, locations, certificate_manager, cas}; cloudflare {zones, origin_ca}. Unknown keys are refused."
+                interval_seconds: { type: integer, minimum: 300, default: 3600 }
+                secret: { type: object, additionalProperties: { type: string }, writeOnly: true, description: "aws {access_key_id, secret_access_key}; azure {client_secret}; gcp {service_account_key: key file JSON}; cloudflare {api_token}" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /api/v1/cloud-accounts/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [inventory]
+      summary: Show a cloud account (without its secret)
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [inventory]
+      summary: Replace a cloud account's settings and interval (cloud:manage); provider and credential kind do not change
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [settings]
+              properties:
+                settings: { type: object }
+                interval_seconds: { type: integer, minimum: 300, default: 3600 }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [inventory]
+      summary: Delete a cloud account and its stored secret (cloud:manage); its findings resolve
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/cloud-accounts/{id}/secret:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    put:
+      tags: [inventory]
+      summary: Replace (rotate) a stored secret (cloud:manage) and scan again
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              properties:
+                secret: { type: object, additionalProperties: { type: string }, writeOnly: true }
+      responses:
+        "204": { description: Replaced }
+        "400": { $ref: "#/components/responses/Problem" }
+  /api/v1/cloud-accounts/{id}/scan:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [inventory]
+      summary: Scan a cloud account now
+      responses:
+        "202": { description: Queued }
+        "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/cloud-accounts/{id}/inventory:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [inventory]
+      summary: What the last scan saw (objects and scope errors, without PEMs)
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        "404": { $ref: "#/components/responses/Problem" }
   /api/v1/authorities:
     get:
       tags: [inventory]

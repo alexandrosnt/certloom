@@ -18,6 +18,7 @@ import (
 	"github.com/alexandrosnt/certloom/internal/authz"
 	"github.com/alexandrosnt/certloom/internal/certparse"
 	"github.com/alexandrosnt/certloom/internal/checks"
+	"github.com/alexandrosnt/certloom/internal/cloudobs"
 	"github.com/alexandrosnt/certloom/internal/jobs"
 	"github.com/alexandrosnt/certloom/internal/oidcauth"
 	"github.com/alexandrosnt/certloom/internal/privateca"
@@ -49,6 +50,8 @@ type Service struct {
 	// CASigner builds the client for a Vault or step-ca issuer; nil uses
 	// NewCASigner. Tests replace it.
 	CASigner func(iss *store.Issuer, credential secret.Value) (privateca.Signer, error)
+	// CloudHooks points cloud account scans at fake provider servers in tests.
+	CloudHooks *cloudobs.Hooks
 	// AgentServerURL is the agent listener URL shown in enrollment commands.
 	AgentServerURL string
 	SessionTTL     time.Duration // default 12h

@@ -1,6 +1,6 @@
 # ADR-0024: Read-only cloud certificate observation
 
-**Status:** Accepted (2026-11-21)
+**Status:** Accepted (2026-11-21). Amended by ADR-0034 (cloud accounts read by certloomd without an agent).
 
 ## Context
 Many certificates never touch a host we manage. They live in AWS Certificate Manager
