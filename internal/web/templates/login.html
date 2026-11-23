@@ -1,5 +1,6 @@
 {{define "content"}}
 <section class="login">
+  <picture><source srcset="/static/logo-dark.svg" media="(prefers-color-scheme: dark)"><img class="logo" src="/static/logo.svg" alt="" width="64" height="64"></picture>
   <h1>Sign in to certloom</h1>
   {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
   {{if .D.OIDC}}

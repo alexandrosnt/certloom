@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} - certloom</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 {{if .Principal.OrgID}}
 <header class="top">
-  <a class="brand" href="/">certloom</a>
+  <a class="brand" href="/"><picture><source srcset="/static/logo-dark.svg" media="(prefers-color-scheme: dark)"><img src="/static/logo.svg" alt="" width="28" height="28"></picture>certloom</a>
   <nav>
     <a href="/" {{if eq .Nav "overview"}}aria-current="page"{{end}}>Overview</a>
     <a href="/certificates" {{if eq .Nav "certificates"}}aria-current="page"{{end}}>Certificates</a>
@@ -37,6 +38,6 @@
 {{if .Flash}}<p class="flash" role="status">{{.Flash}}</p>{{end}}
 {{template "content" .}}
 </main>
-<footer class="foot">Monitoring for all endpoints. Automated renewal and deployment only for Linux + Nginx + ACME HTTP-01 targets managed by certloom-agent (use the CLI).</footer>
+<footer class="foot">Renewal and deployment run through certloom-agent on your hosts; set them up with the <code>certloom</code> CLI, Terraform or Ansible.</footer>
 </body>
 </html>

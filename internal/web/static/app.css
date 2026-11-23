@@ -14,7 +14,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 syst
 a { color: var(--accent); }
 code { font: 13px ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
 .top { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.brand { font-weight: 700; text-decoration: none; color: var(--text); }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; text-decoration: none; color: var(--text); }
+.login .logo { display: block; margin-bottom: 8px; }
 .top nav { display: flex; flex-wrap: wrap; gap: 4px 14px; flex: 1; }
 .top nav a { text-decoration: none; color: var(--muted); }
 .top nav a[aria-current="page"] { color: var(--text); font-weight: 600; }

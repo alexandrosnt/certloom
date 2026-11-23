@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="t">
+  <title id="t">certloom</title>
+  <path d="M120 14C98 27 68 35 34 37V112C34 167 71 205 120 228C169 205 206 167 206 112V37C172 35 142 27 120 14Z" fill="#0B1F3A"/>
+  <rect x="96" y="46" width="78" height="92" rx="9" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="5"/>
+  <rect x="83" y="60" width="78" height="92" rx="9" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="5"/>
+  <rect x="66" y="74" width="84" height="100" rx="10" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="5"/>
+  <rect x="80" y="93" width="54" height="9" rx="4.5" fill="#0B1F3A"/>
+  <rect x="80" y="112" width="38" height="9" rx="4.5" fill="#0B1F3A"/>
+  <path d="M128 182L122 208L132 202L138 211L143 184Z" fill="#0B1F3A"/>
+  <path d="M150 182L156 208L146 202L140 211L135 184Z" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="139" cy="168" r="25" fill="#FFFFFF"/>
+  <circle cx="139" cy="168" r="19" fill="#0B1F3A"/>
+  <path d="M130 168L136.5 174.5L149 162" fill="none" stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

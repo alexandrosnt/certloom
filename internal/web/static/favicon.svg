@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="t">
+  <title id="t">certloom</title>
+  <style>
+    .shield { fill: #0B1F3A; } .card { fill: #FFFFFF; } .ring { fill: #0B1F3A; }
+    @media (prefers-color-scheme: dark) {
+      .shield { fill: #FFFFFF; } .card { fill: #0B1F3A; } .ring { fill: #FFFFFF; }
+    }
+  </style>
+  <path class="shield" d="M120 14C98 27 68 35 34 37V112C34 167 71 205 120 228C169 205 206 167 206 112V37C172 35 142 27 120 14Z"/>
+  <rect class="card" x="66" y="58" width="92" height="112" rx="14"/>
+  <circle class="ring" cx="148" cy="160" r="44"/>
+  <circle cx="148" cy="160" r="34" fill="#0FA3A3"/>
+  <path d="M132 160L143 171L165 149" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

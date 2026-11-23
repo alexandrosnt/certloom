@@ -12,8 +12,12 @@
   derived from the KEK.
 - The plugin output limit (64 KiB) was not enforced: the buffer inherited `ReadFrom`, which
   `os/exec` used instead of the limited `Write`.
+- The web UI footer still said renewal works only for Linux, nginx and HTTP-01.
 
 ### Added
+- Logo and brand files (`docs/brand`): mark in light, dark and one-colour versions, favicon,
+  avatar and a social preview image. The web UI shows the mark in the header and on the
+  sign-in page and serves an SVG favicon.
 - High availability and disaster recovery (ADR-0033): any number of `certloomd`
   replicas behind a load balancer, with the periodic schedulers on one elected
   replica (`leader` table) and jobs on all of them; `certloomd migrate` takes an
