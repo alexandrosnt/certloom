@@ -1,4 +1,4 @@
-package agent
+package cloudobs
 
 import (
 	"context"
@@ -19,10 +19,12 @@ import (
 // Zone - SSL and Certificates - Read, plus Zone - Zone - Read when Zones
 // is empty.
 type CloudflareConfig struct {
-	Name         string   `json:"name"`
-	APITokenFile string   `json:"api_token_file"`
-	Zones        []string `json:"zones,omitempty"` // zone names; empty = every zone the token sees
-	OriginCA     bool     `json:"origin_ca,omitempty"`
+	Name         string `json:"name"`
+	APITokenFile string `json:"api_token_file"`
+	// APIToken is the token held in memory (certloomd); it wins over the file.
+	APIToken string   `json:"-"`
+	Zones    []string `json:"zones,omitempty"` // zone names; empty = every zone the token sees
+	OriginCA bool     `json:"origin_ca,omitempty"`
 	// APIURL overrides https://api.cloudflare.com/client/v4 (tests,
 	// egress proxies), as for the DNS solver.
 	APIURL string `json:"api_url,omitempty"`
@@ -44,16 +46,19 @@ type cfZone struct {
 	Name string `json:"name"`
 }
 
-func cloudflareScopes(f CloudflareConfig, h *cloudHooks) ([]cloudScope, error) {
-	tok, err := os.ReadFile(f.APITokenFile)
-	if err != nil {
-		return nil, err
+func cloudflareScopes(f CloudflareConfig, h *Hooks) ([]cloudScope, error) {
+	tok := []byte(f.APIToken)
+	if len(tok) == 0 {
+		var err error
+		if tok, err = os.ReadFile(f.APITokenFile); err != nil {
+			return nil, err
+		}
 	}
 	base := strings.TrimSuffix(f.APIURL, "/")
 	if base == "" {
 		base = cloudflareAPI
 	}
-	c := &cfClient{hc: h.hc, base: base, token: strings.TrimSpace(string(tok))}
+	c := &cfClient{hc: h.HTTPClient, base: base, token: strings.TrimSpace(string(tok))}
 	// Zones are resolved when the scope is read, so a zone listing failure
 	// is reported like any other read error.
 	read := func(ctx context.Context, emit func(agentproto.CloudObject) bool) error {

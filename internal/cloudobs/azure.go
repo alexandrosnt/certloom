@@ -1,4 +1,4 @@
-package agent
+package cloudobs
 
 import (
 	"context"
@@ -34,6 +34,8 @@ type AzureConfig struct {
 	ClientID              string `json:"client_id,omitempty"`
 	ClientSecretFile      string `json:"client_secret_file,omitempty"`
 	ClientCertificateFile string `json:"client_certificate_file,omitempty"`
+	// ClientSecret is a service principal secret held in memory (certloomd).
+	ClientSecret string `json:"-"`
 }
 
 // kvVersionsKept bounds the versions reported per certificate.
@@ -70,6 +72,9 @@ func (a AzureConfig) validate() []string {
 func (a AzureConfig) credential(hc *http.Client) (azcore.TokenCredential, error) {
 	co := azcore.ClientOptions{Transport: hc}
 	switch {
+	case a.ClientSecret != "":
+		return azidentity.NewClientSecretCredential(a.TenantID, a.ClientID, a.ClientSecret,
+			&azidentity.ClientSecretCredentialOptions{ClientOptions: co})
 	case a.ClientSecretFile != "":
 		b, err := os.ReadFile(a.ClientSecretFile)
 		if err != nil {
@@ -92,10 +97,10 @@ func (a AzureConfig) credential(hc *http.Client) (azcore.TokenCredential, error)
 	return azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{ClientOptions: co, TenantID: a.TenantID})
 }
 
-func azureScopes(a AzureConfig, h *cloudHooks) ([]cloudScope, error) {
-	cred := h.azureCred
+func azureScopes(a AzureConfig, h *Hooks) ([]cloudScope, error) {
+	cred := h.AzureCred
 	if cred == nil {
-		c, err := a.credential(h.hc)
+		c, err := a.credential(h.HTTPClient)
 		if err != nil {
 			return nil, err
 		}
@@ -105,7 +110,7 @@ func azureScopes(a AzureConfig, h *cloudHooks) ([]cloudScope, error) {
 	for _, v := range a.Vaults {
 		v = strings.TrimSuffix(v, "/")
 		c, err := azcertificates.NewClient(v, cred, &azcertificates.ClientOptions{ClientOptions: azcore.ClientOptions{
-			Transport: h.hc, Retry: policy.RetryOptions{MaxRetries: 4}}, DisableChallengeResourceVerification: h.azureAnyResource})
+			Transport: h.HTTPClient, Retry: policy.RetryOptions{MaxRetries: 4}}, DisableChallengeResourceVerification: h.AzureAnyResource})
 		if err != nil {
 			return nil, err
 		}

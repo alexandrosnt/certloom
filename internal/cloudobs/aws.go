@@ -1,4 +1,4 @@
-package agent
+package cloudobs
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	acmtypes "github.com/aws/aws-sdk-go-v2/service/acm/types"
@@ -33,6 +34,11 @@ type AWSAccountConfig struct {
 	// EndpointURL overrides the service endpoint (VPC endpoints,
 	// emulators). It applies to ACM and Private CA alike.
 	EndpointURL string `json:"endpoint_url,omitempty"`
+	// AccessKeyID and SecretAccessKey are a static key held in memory
+	// (certloomd); SessionName names assumed-role sessions.
+	AccessKeyID     string `json:"-"`
+	SecretAccessKey string `json:"-"`
+	SessionName     string `json:"-"`
 }
 
 func (a AWSAccountConfig) scopeNames() []string {
@@ -51,6 +57,9 @@ func awsScopes(ctx context.Context, acct AWSAccountConfig, hc *http.Client) ([]c
 	if acct.CredentialsFile != "" {
 		opts = append(opts, config.WithSharedCredentialsFiles([]string{acct.CredentialsFile}))
 	}
+	if acct.AccessKeyID != "" {
+		opts = append(opts, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(acct.AccessKeyID, acct.SecretAccessKey, "")))
+	}
 	if hc == nil {
 		hc = cloudHTTPClient()
 	}
@@ -63,6 +72,9 @@ func awsScopes(ctx context.Context, acct AWSAccountConfig, hc *http.Client) ([]c
 		cfg.Credentials = aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), acct.AssumeRoleARN,
 			func(o *stscreds.AssumeRoleOptions) {
 				o.RoleSessionName = "certloom-agent"
+				if acct.SessionName != "" {
+					o.RoleSessionName = acct.SessionName
+				}
 				if acct.ExternalID != "" {
 					o.ExternalID = aws.String(acct.ExternalID)
 				}

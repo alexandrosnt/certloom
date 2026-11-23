@@ -1,8 +1,13 @@
-package agent
+// Package cloudobs reads certificate services of cloud providers, read-only:
+// AWS Certificate Manager and Private CA, Azure Key Vault, Google
+// Certificate Manager and CA Service, Cloudflare. The agent and certloomd
+// both use it (ADR-0024, ADR-0034).
+package cloudobs
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -15,10 +20,10 @@ import (
 	"github.com/alexandrosnt/certloom/internal/agentproto"
 )
 
-// CloudConfig turns on read-only observation of cloud certificate services
+// Config turns on read-only observation of cloud certificate services
 // (ADR-0024). Credentials come from each provider's ambient identity unless
 // a file is named.
-type CloudConfig struct {
+type Config struct {
 	// IntervalSeconds is how often the control plane should ask for an
 	// inventory; default 3600, at least 300.
 	IntervalSeconds int                `json:"interval_seconds,omitempty"`
@@ -28,20 +33,21 @@ type CloudConfig struct {
 	Cloudflare      []CloudflareConfig `json:"cloudflare,omitempty"`
 }
 
+// Polling bounds for IntervalSeconds, and limits of one inventory.
 const (
-	cloudDefaultInterval = 3600
-	cloudMinInterval     = 300
+	DefaultInterval = 3600
+	MinInterval     = 300
 	// cloudMaxObjects bounds one inventory; a scope with more is reported
 	// as truncated.
 	cloudMaxObjects   = 20000
 	cloudScopeTimeout = 10 * time.Minute
 )
 
-func (c *Config) validateCloud() []string {
-	cc := c.Cloud
+// Validate checks a configuration read from an agent's config file.
+func (cc *Config) Validate() []string {
 	var p []string
-	if cc.IntervalSeconds != 0 && cc.IntervalSeconds < cloudMinInterval {
-		p = append(p, fmt.Sprintf("cloud.interval_seconds must be at least %d", cloudMinInterval))
+	if cc.IntervalSeconds != 0 && cc.IntervalSeconds < MinInterval {
+		p = append(p, fmt.Sprintf("cloud.interval_seconds must be at least %d", MinInterval))
 	}
 	if len(cc.AWS)+len(cc.Azure)+len(cc.GCP)+len(cc.Cloudflare) == 0 {
 		p = append(p, "cloud: configure at least one of aws, azure, gcp, cloudflare")
@@ -106,11 +112,18 @@ type cloudScope struct {
 	read            func(ctx context.Context, emit func(agentproto.CloudObject) bool) error
 }
 
-// inventoryCloud reads every configured scope. A scope that fails is
-// reported with its error and does not stop the others.
-func (a *Agent) inventoryCloud(ctx context.Context) *agentproto.CloudInventory {
+// Collect reads every configured scope. A scope that fails is reported with
+// its error and does not stop the others. h may be nil.
+func Collect(ctx context.Context, cc *Config, h *Hooks, log *slog.Logger) *agentproto.CloudInventory {
 	out := &agentproto.CloudInventory{Objects: []agentproto.CloudObject{}}
-	for _, sc := range a.cloudScopes(ctx, out) {
+	var hooks Hooks
+	if h != nil {
+		hooks = *h
+	}
+	if hooks.HTTPClient == nil {
+		hooks.HTTPClient = cloudHTTPClient()
+	}
+	for _, sc := range scopes(ctx, cc, &hooks, out) {
 		sctx, cancel := context.WithTimeout(ctx, cloudScopeTimeout)
 		truncated := false
 		err := sc.read(sctx, func(o agentproto.CloudObject) bool {
@@ -128,23 +141,15 @@ func (a *Agent) inventoryCloud(ctx context.Context) *agentproto.CloudInventory {
 		}
 		if err != nil {
 			out.Errors = append(out.Errors, agentproto.CloudScopeError{Provider: sc.provider, Scope: sc.scope, Error: err.Error()})
-			a.log.Warn("cloud inventory", "provider", sc.provider, "scope", sc.scope, "err", err)
+			log.Warn("cloud inventory", "provider", sc.provider, "scope", sc.scope, "err", err)
 		}
 	}
 	return out
 }
 
-// cloudScopes builds the readers. Setup failures (bad credentials file,
-// unknown profile) are recorded against every scope of that entry.
-func (a *Agent) cloudScopes(ctx context.Context, out *agentproto.CloudInventory) []cloudScope {
-	cc := a.cfg.Cloud
-	h := a.cloudTest
-	if h == nil {
-		h = &cloudHooks{}
-	}
-	if h.hc == nil {
-		h.hc = cloudHTTPClient()
-	}
+// scopes builds the readers. Setup failures (bad credentials file, unknown
+// profile) are recorded against every scope of that entry.
+func scopes(ctx context.Context, cc *Config, h *Hooks, out *agentproto.CloudInventory) []cloudScope {
 	var scopes []cloudScope
 	fail := func(provider string, scopeNames []string, err error) {
 		for _, s := range scopeNames {
@@ -152,7 +157,7 @@ func (a *Agent) cloudScopes(ctx context.Context, out *agentproto.CloudInventory)
 		}
 	}
 	for _, acct := range cc.AWS {
-		s, err := awsScopes(ctx, acct, h.hc)
+		s, err := awsScopes(ctx, acct, h.HTTPClient)
 		if err != nil {
 			fail(agentproto.CloudAWSACM, acct.scopeNames(), err)
 			continue
@@ -186,16 +191,16 @@ func (a *Agent) cloudScopes(ctx context.Context, out *agentproto.CloudInventory)
 	return scopes
 }
 
-// cloudHooks lets tests point providers at fake servers.
-type cloudHooks struct {
-	hc        *http.Client
-	azureCred azcore.TokenCredential
-	// azureAnyResource accepts a token challenge from a host that is not a
+// Hooks lets tests point providers at fake servers.
+type Hooks struct {
+	HTTPClient *http.Client
+	AzureCred  azcore.TokenCredential
+	// AzureAnyResource accepts a token challenge from a host that is not a
 	// Key Vault domain (a test server).
-	azureAnyResource bool
-	gcpTokens        oauth2.TokenSource
-	// gcpBase maps a Google API host to a test server URL.
-	gcpBase map[string]string
+	AzureAnyResource bool
+	GCPTokens        oauth2.TokenSource
+	// GCPBase maps a Google API host to a test server URL.
+	GCPBase map[string]string
 }
 
 // cloudHTTPClient is the client for provider calls when no test client is

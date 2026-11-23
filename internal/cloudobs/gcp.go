@@ -1,4 +1,4 @@
-package agent
+package cloudobs
 
 import (
 	"context"
@@ -32,6 +32,8 @@ type GCPConfig struct {
 	CertificateManager *bool  `json:"certificate_manager,omitempty"`
 	CAS                bool   `json:"cas,omitempty"`
 	CredentialsFile    string `json:"credentials_file,omitempty"`
+	// CredentialsJSON is a service account key held in memory (certloomd).
+	CredentialsJSON []byte `json:"-"`
 }
 
 const (
@@ -77,6 +79,15 @@ func (g GCPConfig) validate() []string {
 }
 
 func (g GCPConfig) tokenSource(ctx context.Context) (oauth2.TokenSource, error) {
+	if len(g.CredentialsJSON) > 0 {
+		// Only plain keys: federation configs can name local files and
+		// token endpoints, which a stored credential must not.
+		c, err := google.CredentialsFromJSONWithType(ctx, g.CredentialsJSON, google.ServiceAccount, gcpScope)
+		if err != nil {
+			return nil, err
+		}
+		return c.TokenSource, nil
+	}
 	if g.CredentialsFile == "" {
 		c, err := google.FindDefaultCredentials(ctx, gcpScope)
 		if err != nil {
@@ -114,17 +125,17 @@ type gcpClient struct {
 	base map[string]string
 }
 
-func gcpScopes(ctx context.Context, g GCPConfig, h *cloudHooks) ([]cloudScope, error) {
-	ts := h.gcpTokens
+func gcpScopes(ctx context.Context, g GCPConfig, h *Hooks) ([]cloudScope, error) {
+	ts := h.GCPTokens
 	if ts == nil {
 		// Token requests go through the same client (proxy, timeouts).
 		var err error
-		ts, err = g.tokenSource(context.WithValue(ctx, oauth2.HTTPClient, h.hc))
+		ts, err = g.tokenSource(context.WithValue(ctx, oauth2.HTTPClient, h.HTTPClient))
 		if err != nil {
 			return nil, err
 		}
 	}
-	c := &gcpClient{hc: h.hc, ts: ts, base: h.gcpBase}
+	c := &gcpClient{hc: h.HTTPClient, ts: ts, base: h.GCPBase}
 	var scopes []cloudScope
 	for _, loc := range g.locations() {
 		parent := "projects/" + g.Project + "/locations/" + loc

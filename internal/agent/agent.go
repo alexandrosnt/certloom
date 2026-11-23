@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/alexandrosnt/certloom/internal/agentproto"
+	"github.com/alexandrosnt/certloom/internal/cloudobs"
 	"github.com/alexandrosnt/certloom/internal/version"
 )
 
@@ -56,7 +57,7 @@ type Agent struct {
 	winTrust winTrustHost
 	// cloudTest replaces HTTP clients, credentials and endpoints of cloud
 	// provider calls in tests.
-	cloudTest *cloudHooks
+	cloudTest *cloudobs.Hooks
 
 	// Handlers can be replaced in tests.
 	handlers map[string]func(context.Context, *agentproto.Task) (any, error)

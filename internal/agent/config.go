@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/alexandrosnt/certloom/internal/agentproto"
+	"github.com/alexandrosnt/certloom/internal/cloudobs"
 	"github.com/alexandrosnt/certloom/internal/pluginstore"
 	"sigs.k8s.io/yaml"
 )
@@ -46,7 +47,7 @@ type Config struct {
 	// it then only runs inventory tasks and has no targets.
 	Kubernetes *KubeConfig `json:"kubernetes,omitempty"`
 	// Cloud observes cloud certificate services read-only (ADR-0024).
-	Cloud *CloudConfig `json:"cloud,omitempty"`
+	Cloud *cloudobs.Config `json:"cloud,omitempty"`
 	// WinACMEDir is read (never written) for win-acme discovery on Windows;
 	// default %ProgramData%win-acme.
 	WinACMEDir string `json:"win_acme_dir,omitempty"`
@@ -128,7 +129,7 @@ func (c *Config) Validate() error {
 		p = append(p, c.validateKube()...)
 	}
 	if c.Cloud != nil {
-		p = append(p, c.validateCloud()...)
+		p = append(p, c.Cloud.Validate()...)
 	}
 	seen := map[string]bool{}
 	for _, t := range c.Targets {
@@ -246,11 +247,11 @@ func (c *Config) inventoryInterval() int {
 		if c.Cloud.IntervalSeconds > 0 {
 			shortest(c.Cloud.IntervalSeconds)
 		} else {
-			shortest(cloudDefaultInterval)
+			shortest(cloudobs.DefaultInterval)
 		}
 	}
 	if len(c.DiscoveryPlugins) > 0 {
-		shortest(cloudDefaultInterval)
+		shortest(cloudobs.DefaultInterval)
 	}
 	if len(c.TrustStores) > 0 {
 		shortest(900)

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/alexandrosnt/certloom/internal/agentproto"
+	"github.com/alexandrosnt/certloom/internal/cloudobs"
 )
 
 // handleInventory reports certificate files (public certificates only; PEM
@@ -84,7 +85,7 @@ func (a *Agent) handleInventory(ctx context.Context, _ *agentproto.Task) (any, e
 		out.Kubernetes = k
 	}
 	if a.cfg.Cloud != nil {
-		out.Cloud = a.inventoryCloud(ctx)
+		out.Cloud = cloudobs.Collect(ctx, a.cfg.Cloud, a.cloudTest, a.log)
 	}
 	out.Plugins = a.inventoryPlugins(ctx)
 	out.TrustStores = a.inventoryTrust()
