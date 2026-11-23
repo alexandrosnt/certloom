@@ -88,7 +88,7 @@ same identity). See `docs/runbooks/airgap.md`.
 Packages are also signed with the certloom packaging key (OpenPGP, RSA 4096):
 
 ```
-fingerprint: (published with the first release)
+fingerprint: C43A 8AC9 70C2 7697 1D48  89C2 94E7 B14D D223 1CF4
 key:         https://alexandrosnt.github.io/certloom-packages/gpg.key
 ```
 

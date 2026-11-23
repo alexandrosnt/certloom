@@ -2,20 +2,10 @@
 
 ## Unreleased
 
-### Fixed
-- After a database restore, renewals of targets the agent had worked on since the
-  backup were rejected as stale until the task counter caught up, and tasks whose
-  results had been acknowledged before the failure went unanswered until they
-  expired. Agents now
-  report their sequence fence in the heartbeat and re-send stored results.
-- Web UI forms failed across replicas without sticky sessions: the CSRF key is now
-  derived from the KEK.
-- The plugin output limit (64 KiB) was not enforced: the buffer inherited `ReadFrom`, which
-  `os/exec` used instead of the limited `Write`.
-- The Compose install had no KEK, so agents could not connect and web forms used a
-  per-process CSRF key. It now reads the KEK from a Compose secret (`secrets/kek`) and
-  publishes the agent listener on port 8444 (`CERTLOOM_HOSTNAME`, `CERTLOOM_AGENT_PUBLISH`).
-- The web UI footer still said renewal works only for Linux, nginx and HTTP-01.
+## 0.1.0-rc.1 - 2026-11-23
+
+First release candidate. Everything below is new since the project started;
+the "Fixed" list covers bugs found and fixed before this first release.
 
 ### Added
 - Logo and brand files (`docs/brand`): mark in light, dark and one-colour versions, favicon,
@@ -210,6 +200,19 @@
 - Docker image and a Compose setup with a tested backup/restore procedure.
 
 ### Fixed
+- After a database restore, renewals of targets the agent had worked on since the
+  backup were rejected as stale until the task counter caught up, and tasks whose
+  results had been acknowledged before the failure went unanswered until they
+  expired. Agents now
+  report their sequence fence in the heartbeat and re-send stored results.
+- Web UI forms failed across replicas without sticky sessions: the CSRF key is now
+  derived from the KEK.
+- The plugin output limit (64 KiB) was not enforced: the buffer inherited `ReadFrom`, which
+  `os/exec` used instead of the limited `Write`.
+- The Compose install had no KEK, so agents could not connect and web forms used a
+  per-process CSRF key. It now reads the KEK from a Compose secret (`secrets/kek`) and
+  publishes the agent listener on port 8444 (`CERTLOOM_HOSTNAME`, `CERTLOOM_AGENT_PUBLISH`).
+- The web UI footer still said renewal works only for Linux, nginx and HTTP-01.
 - The "Endpoint added" confirmation in the web UI was never shown: messages containing a
   semicolon were dropped by the query parser.
 - An ARI check that was still running when a renewal finished could overwrite the new

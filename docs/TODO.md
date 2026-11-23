@@ -74,8 +74,6 @@ Not done yet, roughly in the order I want to tackle it.
   Foundation (application pending; `docs/code-signing-policy.md` is ready).
 - First tagged run is a release candidate: snapshots are unsigned, so package
   signing, cosign and attestations are only exercised by a tag.
-- Publish the packaging key fingerprint in `docs/verify-release.md` once the key
-  exists.
 - The reproducibility job uses one pinned GoReleaser image on two runners; a rebuild
   with an independent toolchain (plain `go build` with the same flags) is not compared.
 - Ansible role: install from the apt/yum repository instead of a package URL.
