@@ -14,6 +14,9 @@ when a `vX.Y.Z` tag is pushed (ADR-0031). Nothing is built on a workstation.
    Keep an offline backup of the secret key and its revocation certificate
    (`~/.gnupg/openpgp-revocs.d/<FPR>.rev`). Publish the fingerprint in
    `docs/verify-release.md`. Use this key for packages only.
+   The passphrase must not end in a carriage return: GitHub drops it from the
+   secret, and nfpm then fails with "private key checksum failure". On Windows,
+   strip it when generating one (`openssl rand -base64 33 | tr -d '\r\n'`).
 2. **Package repository.** Create the public repo `alexandrosnt/certloom-packages`
    with one commit containing `gpg.key` and a short README, and turn on GitHub
    Pages for its default branch (root).
