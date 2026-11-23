@@ -7,6 +7,15 @@
   `os/exec` used instead of the limited `Write`.
 
 ### Added
+- Release pipeline (ADR-0031): a `vX.Y.Z` tag builds archives, deb/rpm packages and
+  multi-arch images with GoReleaser, signs `SHA256SUMS` and the images with Sigstore
+  (keyless), attaches SPDX SBOMs and GitHub build provenance, and publishes the packages
+  to signed apt and yum repositories. Builds are reproducible (checked in CI).
+  `docs/verify-release.md` shows how to verify, also offline.
+- `certloomd` deb and rpm packages with a hardened, unprivileged systemd unit
+  (`docs/runbooks/install-packages.md`).
+- `deploy/packaging/build.sh` now builds all archives and packages (amd64 and arm64)
+  from `.goreleaser.yaml` and needs Docker only; `deploy/packaging/nfpm.yaml` is removed.
 - Trust bundles (ADR-0030): named, versioned sets of CA anchors pushed by the agent to
   trust stores declared in its config (`trust_stores`: `pem`, `pkcs12`, `debian`, `rhel`,
   `windows`; `mode: observe` only reports). New task `trust.apply` writes the anchors,

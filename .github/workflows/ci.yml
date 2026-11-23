@@ -188,17 +188,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
-      - name: build certloom-agent deb and rpm (nfpm container)
-        run: sh deploy/packaging/build.sh
+          fetch-depth: 0
+      - name: check release config
+        run: docker run --rm -v "$PWD:/src" -w /src goreleaser/goreleaser:v2.20.0 check
+      - name: build archives, packages and images (unsigned snapshot)
+        run: IMAGES=1 sh deploy/packaging/build.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: certloom-agent-packages
+          name: packages
           path: |
             dist/*.deb
             dist/*.rpm
+
+  # The same commit must give the same bytes on different runner images
+  # (ADR-0031). Unsigned snapshots: signatures carry a timestamp.
+  reproducible:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: build
+        run: VERSION=0.0.0-repro sh deploy/packaging/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sums-${{ matrix.os }}
+          path: dist/SHA256SUMS
+
+  reproducible-compare:
+    needs: reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sums-*
+      - name: compare
+        run: diff sums-ubuntu-24.04/SHA256SUMS sums-ubuntu-22.04/SHA256SUMS
 
   image:
     runs-on: ubuntu-latest

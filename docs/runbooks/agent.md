@@ -169,11 +169,13 @@ certloom-agent run --config /etc/certloom-agent/config.yaml      # run under sys
 
 ## 4a. Install as a systemd service (deb / rpm)
 
-Build the packages (needs Go and Docker; nfpm runs from its container image):
+Install from the signed apt or yum repository
+([install-packages.md](install-packages.md)), or build unsigned packages
+yourself (needs Docker only; GoReleaser runs from its container image):
 
 ```sh
-deploy/packaging/build.sh                         # dist/certloom-agent_<version>_<arch>.deb and .rpm
-VERSION=1.2.3 GOARCH=arm64 deploy/packaging/build.sh
+deploy/packaging/build.sh                         # dist/certloom-agent_<version>_<arch>.deb and .rpm, amd64 and arm64
+VERSION=1.2.3-local deploy/packaging/build.sh
 ```
 
 The package installs:

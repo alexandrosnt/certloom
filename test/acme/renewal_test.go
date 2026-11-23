@@ -33,7 +33,8 @@ const (
 
 var linuxBin, hostBin string
 
-// e2eVersion is stamped into the Linux binaries the same way deploy/packaging/build.sh does.
+// e2eVersion is stamped into the Linux binaries and the e2e packages
+// (CERTLOOM_SNAPSHOT_VERSION in .goreleaser.yaml).
 const e2eVersion = "0.0.0-e2e"
 
 func TestMain(m *testing.M) {
@@ -51,14 +52,6 @@ func TestMain(m *testing.M) {
 		fmt.Printf("linux build: %v\n%s", err, out)
 		os.Exit(1)
 	}
-	// certloom-plugin is its own module (ADR-0027) and goes into the agent package.
-	p := exec.Command("go", "build", "-ldflags", "-X github.com/alexandrosnt/certloom/internal/version.Version="+e2eVersion,
-		"-o", linuxBin+"/certloom-plugin", ".")
-	p.Dir, p.Env = filepath.Join(root, "cmd", "certloom-plugin"), b.Env
-	if out, err := p.CombinedOutput(); err != nil {
-		fmt.Printf("linux build of certloom-plugin: %v\n%s", err, out)
-		os.Exit(1)
-	}
 	h := exec.Command("go", "build", "-o", hostBin+string(os.PathSeparator), "./cmd/certloom")
 	h.Dir = root
 	if out, err := h.CombinedOutput(); err != nil {
@@ -68,6 +61,9 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	_ = os.RemoveAll(linuxBin)
 	_ = os.RemoveAll(hostBin)
+	if pkgKeyDir != "" {
+		_ = os.RemoveAll(pkgKeyDir)
+	}
 	os.Exit(code)
 }
 

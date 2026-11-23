@@ -6,13 +6,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 const (
 	// Keep in sync with deploy/packaging/build.sh.
-	nfpmImage = "goreleaser/nfpm:v2.44.0"
+	goreleaserImage = "goreleaser/goreleaser:v2.20.0"
 	// Built from testdata/systemd (Debian with systemd as PID 1 and nginx).
 	systemdImage = "certloom-e2e-systemd:debian13"
 )
@@ -32,47 +33,62 @@ targets:
     allowed_sans: [www.m2.test]
 `
 
-// buildDeb packages the Linux certloom-agent binary built by TestMain with the
-// repository's nfpm config and returns the path of the .deb.
-func buildDeb(t *testing.T) string {
+var (
+	packagesOnce sync.Once
+	// pkgKeyDir holds a throwaway packaging key (key.asc, pub.asc) for the
+	// package repository test.
+	pkgKeyDir string
+)
+
+// buildPackages builds the release packages from .goreleaser.yaml the way
+// deploy/packaging/build.sh does (an unsigned snapshot into the repository's
+// dist/), once per test binary, and returns the package matching pattern
+// (a glob relative to dist/). GoReleaser's --skip=sign also turns off package
+// signing, so tests that need signed packages sign them themselves.
+func buildPackages(t *testing.T, pattern string) string {
 	t.Helper()
 	root, _ := filepath.Abs("../..")
-	stage := t.TempDir()
-	cp := func(src, dst string) {
-		b, err := os.ReadFile(src)
-		if err != nil {
-			t.Fatal(err)
+	packagesOnce.Do(func() {
+		docker(t, "", "run", "--rm", "-v", root+":/src", "-w", "/src",
+			"-v", "certloom-gomod:/go/pkg/mod",
+			"-e", "GIT_CONFIG_COUNT=1", "-e", "GIT_CONFIG_KEY_0=safe.directory", "-e", "GIT_CONFIG_VALUE_0=/src",
+			"-e", "GORELEASER_CURRENT_TAG=v0.0.0", "-e", "CERTLOOM_SNAPSHOT_VERSION="+e2eVersion,
+			goreleaserImage, "release", "--snapshot", "--clean", "--skip=sign,publish,sbom,docker,archive")
+		if runtime.GOOS == "linux" {
+			docker(t, "", "run", "--rm", "-v", root+":/src", "--entrypoint", "chown", goreleaserImage,
+				"-R", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()), "/src/dist")
 		}
-		p := filepath.Join(stage, filepath.FromSlash(dst))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, b, 0o755); err != nil {
-			t.Fatal(err)
-		}
+	})
+	found, _ := filepath.Glob(filepath.Join(root, "dist", pattern))
+	if len(found) != 1 {
+		t.Fatalf("expected one package matching %s, got %v", pattern, found)
 	}
-	files := []string{"LICENSE", "deploy/packaging/nfpm.yaml", "deploy/packaging/config.example.yaml", "deploy/systemd/certloom-agent.service"}
-	scripts, _ := filepath.Glob(filepath.Join(root, "deploy", "packaging", "scripts", "*.sh"))
-	for _, s := range scripts {
-		files = append(files, "deploy/packaging/scripts/"+filepath.Base(s))
-	}
-	for _, f := range files {
-		cp(filepath.Join(root, filepath.FromSlash(f)), f)
-	}
-	cp(filepath.Join(linuxBin, "certloom-agent"), "dist/linux/certloom-agent")
-	cp(filepath.Join(linuxBin, "certloom-plugin"), "dist/linux/certloom-plugin")
+	return found[0]
+}
 
-	args := []string{"run", "--rm", "-v", stage + ":/src", "-w", "/src", "-e", "VERSION=" + e2eVersion, "-e", "GOARCH=" + runtime.GOARCH}
-	if uid := os.Getuid(); uid >= 0 {
-		args = append(args, "--user", strconv.Itoa(uid)+":"+strconv.Itoa(os.Getgid()))
+// testPackageKey creates an RSA packaging key without passphrase in a new
+// directory: key.asc (secret) and pub.asc. TestMain removes the directory.
+func testPackageKey(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "certloom-pkgkey")
+	if err != nil {
+		t.Fatal(err)
 	}
-	args = append(args, nfpmImage, "pkg", "--config", "deploy/packaging/nfpm.yaml", "--packager", "deb", "--target", "dist/")
+	args := []string{"run", "--rm", "-v", dir + ":/k", "-e", "GNUPGHOME=/tmp/g", "--entrypoint", "sh"}
+	if runtime.GOOS == "linux" {
+		args = append(args, "--user", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()))
+	}
+	args = append(args, goreleaserImage, "-c", `set -e; mkdir -m 0700 /tmp/g
+gpg --batch --quiet --passphrase '' --quick-gen-key 'certloom e2e <e2e@example.invalid>' rsa3072 sign 1d
+gpg --batch --armor --export-secret-keys > /k/key.asc
+gpg --batch --armor --export > /k/pub.asc`)
 	docker(t, "", args...)
-	debs, _ := filepath.Glob(filepath.Join(stage, "dist", "*.deb"))
-	if len(debs) != 1 {
-		t.Fatalf("expected one .deb, got %v", debs)
-	}
-	return debs[0]
+	return dir
+}
+
+// buildDeb returns the certloom-agent .deb for this machine's architecture.
+func buildDeb(t *testing.T) string {
+	return buildPackages(t, "certloom-agent_*_"+runtime.GOARCH+".deb")
 }
 
 type sysRun struct {

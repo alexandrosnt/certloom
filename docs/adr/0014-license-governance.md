@@ -24,7 +24,7 @@
 **Releases (from M1)**
 - Reproducible builds with `go build -trimpath`.
 - SBOM (SPDX via syft).
-- cosign keyless signatures and SLSA build provenance.
+- cosign keyless signatures and SLSA build provenance. How: ADR-0031.
 - Container images on a minimal/distroless base.
 
 **Telemetry**

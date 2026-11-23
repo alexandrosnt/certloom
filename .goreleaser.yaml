@@ -1,0 +1,223 @@
+# Release build (ADR-0031). Run by .github/workflows/release.yml on a v* tag;
+# deploy/packaging/build.sh runs the same file as a local snapshot.
+version: 2
+project_name: certloom
+
+# Nested Go modules (client/) are tagged with their path as prefix, so the
+# release tag is always passed in GORELEASER_CURRENT_TAG rather than guessed.
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  # The settings of this first build are shared by the others: static,
+  # path-free, stamped with the version, file times from the commit so the
+  # same commit gives the same bytes.
+  - &build
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/alexandrosnt/certloom/internal/version.Version={{ .Version }}
+      - -X github.com/alexandrosnt/certloom/internal/version.Commit={{ .ShortCommit }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    id: certloomd
+    main: ./cmd/certloomd
+    binary: certloomd
+    goos: [linux]
+    goarch: [amd64, arm64]
+  - <<: *build
+    id: certloom
+    main: ./cmd/certloom
+    binary: certloom
+    goos: [linux, windows, darwin]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+  - <<: *build
+    id: certloom-agent
+    main: ./cmd/certloom-agent
+    binary: certloom-agent
+    goos: [linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+  # Its own module (ADR-0027), so it builds from its directory.
+  - <<: *build
+    id: certloom-plugin
+    dir: cmd/certloom-plugin
+    main: .
+    binary: certloom-plugin
+    goos: [linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: certloomd
+    ids: [certloomd]
+    name_template: "certloomd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md]
+  - id: certloom
+    ids: [certloom]
+    name_template: "certloom_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, README.md]
+  - id: certloom-agent
+    ids: [certloom-agent, certloom-plugin]
+    name_template: "certloom-agent_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, README.md]
+
+nfpms:
+  - id: certloom-agent
+    package_name: certloom-agent
+    ids: [certloom-agent, certloom-plugin]
+    file_name_template: "{{ .ConventionalFileName }}"
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    mtime: "{{ .CommitDate }}"
+    maintainer: certloom maintainers <certloom@example.com>
+    vendor: certloom
+    homepage: https://github.com/alexandrosnt/certloom
+    license: Apache-2.0
+    section: admin
+    priority: optional
+    description: |-
+      Certificate lifecycle agent for certloom.
+      Runs next to a web server, obtains certificates over ACME with locally
+      generated keys, deploys them with an atomic symlink switch, tests and
+      reloads the server and verifies what it serves.
+    contents:
+      - src: deploy/systemd/certloom-agent.service
+        dst: /usr/lib/systemd/system/certloom-agent.service
+        file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
+      - src: deploy/packaging/config.example.yaml
+        dst: /etc/certloom-agent/config.yaml
+        type: config|noreplace
+        file_info: { mode: 0640, mtime: "{{ .CommitDate }}" }
+      - dst: /etc/certloom-agent
+        type: dir
+        file_info: { mode: 0755, mtime: "{{ .CommitDate }}" }
+      - src: LICENSE
+        dst: /usr/share/doc/certloom-agent/LICENSE
+        file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
+    scripts:
+      postinstall: deploy/packaging/scripts/postinstall.sh
+      preremove: deploy/packaging/scripts/preremove.sh
+      postremove: deploy/packaging/scripts/postremove.sh
+    rpm: &rpmsig
+      # A fixed build host keeps the rpm header the same on every runner.
+      buildhost: certloom-release
+      signature:
+        key_file: '{{ if index .Env "PACKAGE_GPG_KEY_FILE" }}{{ .Env.PACKAGE_GPG_KEY_FILE }}{{ end }}'
+    deb: &debsig
+      signature:
+        key_file: '{{ if index .Env "PACKAGE_GPG_KEY_FILE" }}{{ .Env.PACKAGE_GPG_KEY_FILE }}{{ end }}'
+
+  - id: certloomd
+    package_name: certloomd
+    ids: [certloomd, certloom]
+    file_name_template: "{{ .ConventionalFileName }}"
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    mtime: "{{ .CommitDate }}"
+    maintainer: certloom maintainers <certloom@example.com>
+    vendor: certloom
+    homepage: https://github.com/alexandrosnt/certloom
+    license: Apache-2.0
+    section: admin
+    priority: optional
+    description: |-
+      certloom control plane.
+      Certificate inventory, monitoring, renewal workflows and the API, web UI
+      and agent endpoint. Needs PostgreSQL 16 or later.
+    contents:
+      - src: deploy/systemd/certloomd.service
+        dst: /usr/lib/systemd/system/certloomd.service
+        file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
+      - src: deploy/systemd/certloomd.sysusers
+        dst: /usr/lib/sysusers.d/certloomd.conf
+        file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
+      - src: deploy/packaging/certloomd.env.example
+        dst: /etc/certloom/certloomd.env
+        type: config|noreplace
+        file_info: { mode: 0640, mtime: "{{ .CommitDate }}" }
+      - src: LICENSE
+        dst: /usr/share/doc/certloomd/LICENSE
+        file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
+    scripts:
+      postinstall: deploy/packaging/scripts/certloomd-postinstall.sh
+      preremove: deploy/packaging/scripts/certloomd-preremove.sh
+      postremove: deploy/packaging/scripts/certloomd-postremove.sh
+    rpm: *rpmsig
+    deb: *debsig
+
+checksum:
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+sboms:
+  - id: archives
+    artifacts: archive
+  - id: packages
+    artifacts: package
+
+# One keyless signature over SHA256SUMS covers every file listed in it.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args: [sign-blob, "--bundle=${signature}", "${artifact}", --yes]
+    artifacts: checksum
+    output: true
+
+dockers_v2:
+  - id: certloom
+    ids: [certloomd, certloom]
+    dockerfile: deploy/docker/certloom.Dockerfile
+    images: [ghcr.io/alexandrosnt/certloom]
+    tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
+    platforms: [linux/amd64, linux/arm64]
+    annotations: &annotations
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.source": "https://github.com/alexandrosnt/certloom"
+      "org.opencontainers.image.licenses": "Apache-2.0"
+      "org.opencontainers.image.created": "{{ .CommitDate }}"
+  - id: certloom-agent
+    ids: [certloom-agent, certloom-plugin]
+    dockerfile: deploy/docker/certloom-agent.Dockerfile
+    images: [ghcr.io/alexandrosnt/certloom-agent]
+    tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
+    platforms: [linux/amd64, linux/arm64]
+    annotations: *annotations
+
+docker_signs:
+  - cmd: cosign
+    args: [sign, "${artifact}@${digest}", --yes]
+    output: true
+
+# Local and test builds (deploy/packaging/build.sh) may pin the version, so
+# tests can check what the binaries report.
+snapshot:
+  version_template: '{{ if index .Env "CERTLOOM_SNAPSHOT_VERSION" }}{{ .Env.CERTLOOM_SNAPSHOT_VERSION }}{{ else }}0.0.0-dev+{{ .ShortCommit }}{{ end }}'
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: alexandrosnt
+    name: certloom
+  prerelease: auto
+  footer: |
+    Verify downloads before use: see docs/verify-release.md.

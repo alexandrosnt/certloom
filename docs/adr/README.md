@@ -40,3 +40,4 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0028](0028-private-ca-issuers.md) | Vault PKI and step-ca issuers | Accepted |
 | [0029](0029-ca-inventory.md) | Root and intermediate CA inventory and rollover planning | Accepted |
 | [0030](0030-trust-bundles.md) | Trust-bundle distribution and drift detection | Accepted |
+| [0031](0031-release-integrity.md) | Signed releases, SBOMs and build provenance | Accepted |

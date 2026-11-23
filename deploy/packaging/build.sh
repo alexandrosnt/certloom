@@ -1,42 +1,40 @@
 #!/bin/sh
-# Builds certloom-agent deb and rpm packages into dist/.
+# Builds every release artifact (archives, deb and rpm packages) into dist/ as
+# an unsigned snapshot, from .goreleaser.yaml, the same file releases use.
 #
-#   deploy/packaging/build.sh                    # version 0.0.0-dev, host arch
-#   VERSION=1.2.3 GOARCH=arm64 deploy/packaging/build.sh
+#   deploy/packaging/build.sh                 # version 0.0.0-dev+<commit>
+#   VERSION=1.2.3-rc1 deploy/packaging/build.sh
+#   IMAGES=1 deploy/packaging/build.sh        # also build the container images
 #
-# Needs Go and Docker. nfpm runs from its container image; it is not a Go
-# module dependency.
+# Needs Docker only: GoReleaser, Go and syft run from the GoReleaser image.
 set -eu
 
-NFPM_IMAGE=goreleaser/nfpm:v2.44.0
+GORELEASER_IMAGE=goreleaser/goreleaser:v2.20.0
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
 
-VERSION=${VERSION:-0.0.0-dev}
-GOARCH=${GOARCH:-$(go env GOARCH)}
-COMMIT=${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}
-bin=dist/linux/certloom-agent
-
-CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH go build -trimpath \
-    -ldflags "-s -w -X github.com/alexandrosnt/certloom/internal/version.Version=${VERSION} -X github.com/alexandrosnt/certloom/internal/version.Commit=${COMMIT}" \
-    -o "$bin" ./cmd/certloom-agent
-# certloom-plugin is its own Go module (ADR-0027), built from its directory.
-(cd cmd/certloom-plugin && CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH go build -trimpath \
-    -ldflags "-s -w -X github.com/alexandrosnt/certloom/internal/version.Version=${VERSION} -X github.com/alexandrosnt/certloom/internal/version.Commit=${COMMIT}" \
-    -o ../../dist/linux/certloom-plugin .)
+skip=sign,publish,sbom
+if [ -z "${IMAGES:-}" ]; then
+    skip=$skip,docker
+fi
 
 # Docker Desktop on Windows (Git Bash) needs a native path and no path rewriting.
 src=$(pwd -W 2>/dev/null || pwd)
-user=""
-if [ "$(uname -s)" = Linux ]; then
-    user="--user $(id -u):$(id -g)"
-fi
 
-for packager in deb rpm; do
-    # shellcheck disable=SC2086
-    MSYS_NO_PATHCONV=1 docker run --rm $user -v "$src:/src" -w /src \
-        -e VERSION="$VERSION" -e GOARCH="$GOARCH" \
-        "$NFPM_IMAGE" pkg --config deploy/packaging/nfpm.yaml --packager "$packager" --target dist/
-done
-ls -l dist/*.deb dist/*.rpm
+MSYS_NO_PATHCONV=1 docker run --rm \
+    -v "$src:/src" -w /src \
+    -v certloom-gomod:/go/pkg/mod \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src \
+    -e GORELEASER_CURRENT_TAG=v0.0.0 \
+    -e CERTLOOM_SNAPSHOT_VERSION="${VERSION:-}" \
+    -e SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+    "$GORELEASER_IMAGE" release --snapshot --clean --skip="$skip"
+
+# The container runs as root; hand dist/ back to the caller on Linux.
+if [ "$(uname -s)" = Linux ]; then
+    MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" --entrypoint chown \
+        "$GORELEASER_IMAGE" -R "$(id -u):$(id -g)" /src/dist
+fi
+ls dist/*.deb dist/*.rpm

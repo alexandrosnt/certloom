@@ -1,0 +1,19 @@
+name: release
+
+# A vX.Y.Z tag on main releases. The build runs in a reusable workflow so its
+# identity, not this file's, is what signatures and provenance name (ADR-0031).
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  release:
+    uses: ./.github/workflows/release-build.yml
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    secrets: inherit

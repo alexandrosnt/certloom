@@ -1,0 +1,66 @@
+# certloomd: certloom control plane.
+#
+# Settings come from /etc/certloom/certloomd.env (read by systemd as root, so it
+# can stay 0600). Files it names, such as the TLS key and the KEK file, must be
+# readable by the certloom group, for example root:certloom 0640.
+#
+# Migrations are not run here: the runtime role cannot change the schema. Run
+# them as the owner role before the first start and after each upgrade:
+#   CERTLOOM_MIGRATE_DATABASE_URL=postgres://certloom_owner:...@db/certloom certloomd migrate
+#   systemctl enable --now certloomd
+
+[Unit]
+Description=certloom control plane
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=exec
+User=certloom
+Group=certloom
+EnvironmentFile=/etc/certloom/certloomd.env
+ExecStart=/usr/bin/certloomd serve
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+
+StateDirectory=certloom
+StateDirectoryMode=0700
+UMask=0077
+
+# Filesystem: everything read-only except the state directory.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+
+# Privileges: none. Listen on a port above 1024 or put a proxy in front.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+MemoryDenyWriteExecute=yes
+
+# Kernel.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+
+# Network: clients, agents, PostgreSQL, ACME CAs, OIDC and probe targets.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

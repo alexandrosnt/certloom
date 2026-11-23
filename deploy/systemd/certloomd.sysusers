@@ -1,0 +1,2 @@
+# System user for certloomd (installed as /usr/lib/sysusers.d/certloomd.conf).
+u certloom - "certloom control plane" /var/lib/certloom
