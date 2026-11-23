@@ -154,8 +154,8 @@ func setup(ctx context.Context, args []string) error {
 
 	step("Starting certloomd.service")
 	for _, a := range [][]string{{"enable", "certloomd.service"}, {"restart", "certloomd.service"}} {
-		if out, err := exec.CommandContext(ctx, "systemctl", a...).CombinedOutput(); err != nil {
-			return fmt.Errorf("systemctl %s: %v: %s", a[0], err, out)
+		if out, err := exec.CommandContext(ctx, "systemctl", a...).CombinedOutput(); err != nil { //nolint:gosec // fixed arguments
+			return fmt.Errorf("systemctl %s: %w: %s", a[0], err, out)
 		}
 	}
 
@@ -315,7 +315,7 @@ func postgresTLS(ctx context.Context, p setupPaths) error {
 	}
 	pemOf := func(typ string, b []byte) []byte { return pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: b}) }
 	dir := filepath.Dir(p.pgCert)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // PostgreSQL runs as its own user and must reach its files here
 		return err
 	}
 	if err := writeFileOwned(p.pgKey, pemOf("PRIVATE KEY", kb), 0o600, uid, gid); err != nil {
@@ -365,7 +365,7 @@ func psql(ctx context.Context, sql string) (string, error) {
 	cmd.Dir = "/"
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("psql: %v: %s", err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("psql: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
 }
@@ -420,7 +420,7 @@ func writeFileOwned(path string, data []byte, mode os.FileMode, uid, gid int) er
 	}
 	defer os.Remove(tmp.Name())
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {
