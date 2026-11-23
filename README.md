@@ -44,6 +44,18 @@ Pre-1.0 and under active development. The first release candidate is `v0.1.0-rc.
 ([releases](../../releases)); you can also build from `main` or run the
 [Compose install](deploy/compose/README.md).
 
+## Start here
+
+1. **[What certloom does](docs/overview.md)**: the pieces, and which ones you need.
+2. **[Monitor your certificates with OpenTofu](docs/getting-started/opentofu.md)**: install
+   the server with two commands, describe your sites in a `.tf` file, get alerts. No
+   agent, no web UI needed.
+
+```sh
+sudo apt-get install certloomd     # after adding the repository
+sudo certloomd setup               # prints the address and a sign-in token
+```
+
 ## Highlights
 
 - **Private keys stay on the host.** Agents generate keys and CSRs locally; the control
@@ -121,9 +133,12 @@ What each integration can do, and the test behind each claim:
 against API fakes only so far, and the release pipeline has not published a tagged
 release yet. Open items: [docs/TODO.md](docs/TODO.md).
 
-## Getting started
+## All guides
 
-- Run the control plane: [deploy/compose/README.md](deploy/compose/README.md)
+- What certloom does: [docs/overview.md](docs/overview.md)
+- Monitor with OpenTofu (no agent): [docs/getting-started/opentofu.md](docs/getting-started/opentofu.md)
+- Install from packages (`certloomd setup`): [docs/runbooks/install-packages.md](docs/runbooks/install-packages.md)
+- Run the control plane with Docker Compose: [deploy/compose/README.md](deploy/compose/README.md)
 - Agents on Linux (packages, systemd, nginx, DNS-01, plugins): [docs/runbooks/agent.md](docs/runbooks/agent.md)
 - Windows and IIS: [docs/runbooks/windows-iis.md](docs/runbooks/windows-iis.md)
 - Kubernetes observation: [docs/runbooks/kubernetes.md](docs/runbooks/kubernetes.md)
