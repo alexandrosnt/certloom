@@ -54,6 +54,15 @@ services:
       CERTLOOM_TLS_CERT: /run/certloom/tls/server.crt
       CERTLOOM_TLS_KEY: /run/certloom/tls/server.key
       CERTLOOM_LOG_LEVEL: ${CERTLOOM_LOG_LEVEL:-info}
+      # Key-encryption key: protects the agent CA, the task signing key and
+      # stored credentials. Back it up apart from the database; a restore
+      # needs both.
+      CERTLOOM_KEK_FILE: /run/secrets/kek
+      # Agent listener (mutual TLS). Agents dial out to it, so the name must
+      # be the one agents use to reach this host.
+      CERTLOOM_AGENT_LISTEN: 0.0.0.0:8444
+      CERTLOOM_AGENT_SERVER_NAMES: ${CERTLOOM_HOSTNAME:?set CERTLOOM_HOSTNAME in .env}
+      CERTLOOM_AGENT_PUBLIC_URL: https://${CERTLOOM_HOSTNAME}:8444
       CERTLOOM_WEBHOOK_SECRET: ${CERTLOOM_WEBHOOK_SECRET:-}
       CERTLOOM_SMTP_PASSWORD: ${CERTLOOM_SMTP_PASSWORD:-}
       # External audit export (ADR-0012). Strongly recommended; see the compose README.
@@ -67,12 +76,18 @@ services:
       CERTLOOM_OIDC_CLIENT_SECRET: ${CERTLOOM_OIDC_CLIENT_SECRET:-}
       CERTLOOM_OIDC_REDIRECT_URL: ${CERTLOOM_OIDC_REDIRECT_URL:-}
       CERTLOOM_OIDC_CLI_CLIENT_ID: ${CERTLOOM_OIDC_CLI_CLIENT_ID:-}
+    secrets: [kek]
     volumes:
       - ./tls:/run/certloom/tls:ro
     ports:
       - "${CERTLOOM_PUBLISH:-127.0.0.1:8443}:8443"
+      - "${CERTLOOM_AGENT_PUBLISH:-127.0.0.1:8444}:8444"
     depends_on:
       app-role: { condition: service_completed_successfully }
+
+secrets:
+  kek:
+    file: ./secrets/kek
 
 volumes:
   pgdata:

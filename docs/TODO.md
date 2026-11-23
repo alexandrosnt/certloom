@@ -107,8 +107,6 @@ Not done yet, roughly in the order I want to tackle it.
   PostgreSQL if that turns out to matter.
 - Review the existing periodic loops for safety when two runs overlap (a leader that
   lost its lease mid-tick); ADR-0033 makes it a rule for new loops.
-- The Compose install sets no KEK, so it runs without agent support and with a
-  per-process CSRF key; add a generated KEK file to the Compose setup.
 - HA e2e covers two replicas behind nginx and a PostgreSQL restart, not a real
   Patroni or CloudNativePG failover.
 - `members` has no RLS on purpose (sign-in needs it before the org is known); maybe move

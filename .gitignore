@@ -17,4 +17,5 @@ coverage.*
 deploy/compose/.env
 deploy/compose/tls/
 deploy/compose/backups/
+deploy/compose/secrets/
 !deploy/compose/.env.example

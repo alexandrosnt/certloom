@@ -1,19 +1,27 @@
 # Single-node install (Docker Compose)
 
-This runs PostgreSQL 18 and `certloomd` on one host. It is suitable for small teams and
-evaluation. **M1 scope: inventory and monitoring only.** Nothing here issues,
-renews or deploys certificates.
+This runs PostgreSQL 18 and `certloomd` on one host: inventory, monitoring, alerts,
+and renewal through agents on your other hosts. It is suitable for small teams and
+evaluation. For several replicas see [docs/runbooks/ha.md](../../docs/runbooks/ha.md).
 
 ## 1. Prepare
 
 ```sh
 cd deploy/compose
-cp .env.example .env        # then set strong passwords in .env
+cp .env.example .env        # then set strong passwords and CERTLOOM_HOSTNAME in .env
 mkdir -p tls backups
+mkdir -m 700 secrets
+docker compose build
+docker compose run --rm --no-deps certloomd gen-kek > secrets/kek
+chmod 644 secrets/kek       # certloomd runs as uid 65532 in the container; the 700 directory keeps others out
 ```
 
 Put a server certificate and key for the dashboard/API in `tls/server.crt` and
 `tls/server.key`. `certloomd` refuses to serve plain HTTP on a non-loopback address.
+
+`secrets/kek` is the key-encryption key. It protects the agent CA, the task signing
+key and stored credentials. Copy it somewhere safe **apart from database backups**:
+a backup is useless without it, and anyone holding both can read the credentials.
 
 ## 2. Start
 
@@ -42,6 +50,21 @@ certloom endpoint add www.example.com --scope internet
 certloom status
 ```
 
+## 3a. Connect an agent
+
+Agents dial out to port 8444 on `CERTLOOM_HOSTNAME`. If they run on other machines,
+set `CERTLOOM_AGENT_PUBLISH=0.0.0.0:8444` in `.env` and allow only the agent hosts
+through the firewall. Then, on the agent host:
+
+```sh
+certloom agent token --name web-01      # run where the CLI is logged in; prints the enroll command
+certloom-agent enroll --config /etc/certloom-agent/config.yaml --ca-hash sha256:...
+```
+
+The agent config, packages and the first renewal are in
+[docs/runbooks/agent.md](../../docs/runbooks/agent.md) (Linux and nginx) and
+[docs/runbooks/windows-iis.md](../../docs/runbooks/windows-iis.md) (Windows and IIS).
+
 ## 4. Backup
 
 The database holds everything. Notification secrets live in `.env`, not in the database.
@@ -55,7 +78,8 @@ server's own major version. A dump made with newer tools can contain settings an
 older server rejects on restore (for example `transaction_timeout`, new in 17),
 so do not back up with a newer client than the server you will restore into.
 
-Back up `.env` and `tls/` separately and securely. They contain credentials.
+Back up `.env`, `tls/` and `secrets/kek` separately and securely. They contain
+credentials, and a restore needs the same KEK as the dump.
 
 ## 4a. External audit export (strongly recommended)
 
@@ -121,6 +145,10 @@ git pull && docker compose up -d --build
 Migrations are forward-only (ADR-0002). Take a backup before upgrading. To roll
 back, restore that backup and run the previous image.
 
+Installs set up before the KEK was part of this file need one first: create
+`secrets/kek` as in step 1 and add `CERTLOOM_HOSTNAME` (and `CERTLOOM_AGENT_PUBLISH`)
+to `.env` before `docker compose up`.
+
 ## 7. Pause automation (kill switch)
 
 ```sh
@@ -128,8 +156,10 @@ certloom automation pause --reason "investigating alert storm"
 certloom automation resume
 ```
 
-## Known limitations (M1)
+## Known limitations
 
-- No high availability. Running several `certloomd` replicas is designed for (DB leases), but only a single replica has been tested.
+- One `certloomd` on one host. Several replicas work (leader lease in the database,
+  tested in `TestHAReplicas`), but this file runs one; see
+  [docs/runbooks/ha.md](../../docs/runbooks/ha.md).
 - Rate limits apply per process; with N replicas the effective limit is Nx higher.
 - Observation history is pruned to the policy's retention (default 30 days), always keeping each endpoint's latest observation.

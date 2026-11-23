@@ -12,6 +12,9 @@
   derived from the KEK.
 - The plugin output limit (64 KiB) was not enforced: the buffer inherited `ReadFrom`, which
   `os/exec` used instead of the limited `Write`.
+- The Compose install had no KEK, so agents could not connect and web forms used a
+  per-process CSRF key. It now reads the KEK from a Compose secret (`secrets/kek`) and
+  publishes the agent listener on port 8444 (`CERTLOOM_HOSTNAME`, `CERTLOOM_AGENT_PUBLISH`).
 - The web UI footer still said renewal works only for Linux, nginx and HTTP-01.
 
 ### Added
