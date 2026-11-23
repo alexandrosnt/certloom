@@ -12,11 +12,16 @@
   `postgresql`.
 - Getting-started guides, each tested end to end on a fresh host: an overview
   of what certloom does (`docs/overview.md`), monitoring with OpenTofu and no
-  agent, and renewal on Linux with nginx.
+  agent, renewal on Linux with nginx, and renewal on Windows with IIS. The
+  Windows guide runs on a hosted Windows Server with IIS in the `guides`
+  workflow.
 - `certloom deployment create --endpoint` (and the API's `endpoint` field)
   also takes the endpoint's host or `host:port` instead of its id.
 
 ### Fixed
+- The Windows agent could not finish an ACME order for an IIS target: with the
+  key in the machine key store, nothing had created the run directory the
+  issued chain is saved in. Found by the first full renewal on Windows.
 - certloomd ignored a configured KEK unless the agent listener was on, so a package
   install without `CERTLOOM_AGENT_LISTEN` could not store webhook, EAB, DNS or CA
   credentials and used a per-process CSRF key. The packaged `certloomd.env` now

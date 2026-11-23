@@ -36,7 +36,7 @@ outage, and can renew the ones on your own servers for you.
 | Be warned before any website or service certificate expires, is for the wrong name, uses a weak key or comes from an untrusted CA | No | [Monitor with OpenTofu](getting-started/opentofu.md) |
 | Keep an inventory of certificate files you already have | No | `certloom inventory import` |
 | Renew and install certificates on Linux with nginx (Let's Encrypt or any ACME CA) | Yes, on that server | [Linux and nginx](getting-started/linux-nginx.md) |
-| The same on Windows with IIS | Yes | [runbooks/windows-iis.md](runbooks/windows-iis.md) |
+| The same on Windows with IIS | Yes | [Windows and IIS](getting-started/windows-iis.md) |
 | See cert-manager certificates in Kubernetes | Yes, in the cluster | [runbooks/kubernetes.md](runbooks/kubernetes.md) |
 | See certificates in AWS, Azure, Google Cloud or Cloudflare | Yes, in the cloud account | [runbooks/cloud.md](runbooks/cloud.md) |
 | Push your own root CAs to servers' trust stores | Yes | [runbooks/trust-bundles.md](runbooks/trust-bundles.md) |

@@ -1,0 +1,45 @@
+name: guides
+
+# Runs getting-started guides end to end on hosted runners where Docker cannot
+# stand in for the host (Windows and IIS).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - docs/getting-started/windows-iis.md
+      - test/guides/**
+      - .github/workflows/guides.yml
+
+permissions:
+  contents: read
+
+jobs:
+  windows-iis:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: install IIS
+        shell: pwsh
+        run: Install-WindowsFeature -Name Web-Server, Web-Static-Content, Web-Mgmt-Console | Out-Null
+      - name: build
+        shell: pwsh
+        run: |
+          $bin = Join-Path $env:RUNNER_TEMP "bin"
+          foreach ($c in "certloomd", "certloom", "certloom-agent") { go build -o "$bin\$c.exe" "./cmd/$c" }
+      - name: run the guide
+        shell: pwsh
+        run: ./test/guides/windows-iis.ps1 -Bin (Join-Path $env:RUNNER_TEMP "bin")
+      - name: logs
+        if: failure()
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem (Join-Path $env:RUNNER_TEMP "guide") -Recurse -Include *.log, *.err) {
+            Write-Host "==== $($f.FullName)"; Get-Content $f.FullName -Tail 80
+          }
+          $agentLog = "C:\ProgramData\certloom-agent\agent.log"
+          if (Test-Path $agentLog) { Write-Host "==== agent.log"; Get-Content $agentLog -Tail 120 }

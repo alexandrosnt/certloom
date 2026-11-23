@@ -64,8 +64,6 @@ Not done yet, roughly in the order I want to tackle it.
 ## Windows and Kubernetes
 - IIS: Central Certificate Store bindings are only reported; creating bindings and TPM
   keys are not supported yet.
-- The Windows IIS test runs in CI without ACME; run one renewal against Pebble or
-  Let's Encrypt staging on a real Windows Server.
 - Windows agent: logs go to a file, not the Event Log.
 
 ## Releases
