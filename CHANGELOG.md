@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0-rc.2 - 2026-11-23
+
+Second release candidate: easier to start with. One-step server setup,
+tested getting-started guides, and cloud certificates without an agent.
+
 ### Added
 - Cloud accounts read by certloomd itself, without an agent (ADR-0034): AWS
   Certificate Manager and Private CA, Azure Key Vault, Google Certificate

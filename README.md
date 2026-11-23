@@ -50,6 +50,11 @@ Pre-1.0 and under active development. The first release candidate is `v0.1.0-rc.
 2. **[Monitor your certificates with OpenTofu](docs/getting-started/opentofu.md)**: install
    the server with two commands, describe your sites in a `.tf` file, get alerts. No
    agent, no web UI needed.
+3. Then whichever applies to you, each tested end to end:
+   [cloud certificates (AWS, Azure, Google, Cloudflare)](docs/getting-started/cloud.md),
+   [renewal on Linux with nginx](docs/getting-started/linux-nginx.md),
+   [renewal on Windows with IIS](docs/getting-started/windows-iis.md),
+   [cert-manager in Kubernetes](docs/getting-started/kubernetes.md).
 
 ```sh
 sudo apt-get install certloomd     # after adding the repository
