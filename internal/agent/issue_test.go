@@ -101,3 +101,13 @@ func TestCSRTask(t *testing.T) {
 		t.Fatal("CSR is not signed by the run key")
 	}
 }
+
+func TestSaveIssuedCreatesRunDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "certs", "shop", "run_1")
+	if err := saveIssued(dir, []byte("chain")); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "issued.pem")); err != nil || string(b) != "chain" {
+		t.Fatalf("issued.pem: %q %v", b, err)
+	}
+}

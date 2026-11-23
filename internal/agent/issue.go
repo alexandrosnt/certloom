@@ -150,11 +150,20 @@ func (a *Agent) handleIssue(ctx context.Context, t *agentproto.Task) (any, error
 		out.AccountSlot = p.AccountSlot // the account exists even though the order failed
 		return out, fmt.Errorf("acme: %w", err)
 	}
-	// Keep a copy beside the key; deploy writes the chain the control plane validated.
-	if err := os.WriteFile(filepath.Join(dir, "issued.pem"), res.Certificate, 0o644); err != nil { //nolint:gosec // public certificate chain
+	if err := saveIssued(dir, res.Certificate); err != nil {
 		return nil, err
 	}
 	return agentproto.IssueOutput{ChainPEM: string(res.Certificate), AccountSlot: p.AccountSlot}, nil
+}
+
+// saveIssued keeps a copy of the chain beside the run's key; deploy writes the
+// chain the control plane validated. With a key in a Windows key store
+// nothing else has created the run directory yet.
+func saveIssued(dir string, chain []byte) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "issued.pem"), chain, 0o644) //nolint:gosec // public certificate chain
 }
 
 // handleCSR makes the run's key and returns a CSR for an issuer the control
