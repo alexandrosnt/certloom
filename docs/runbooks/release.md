@@ -17,14 +17,19 @@ when a `vX.Y.Z` tag is pushed (ADR-0031). Nothing is built on a workstation.
 2. **Package repository.** Create the public repo `alexandrosnt/certloom-packages`
    with one commit containing `gpg.key` and a short README, and turn on GitHub
    Pages for its default branch (root).
-3. **Token.** A fine-grained personal access token limited to
-   `certloom-packages`, permission Contents: read and write, one-year expiry.
+3. **Deploy key.** An SSH key that can push to `certloom-packages` and nothing else:
+   ```sh
+   ssh-keygen -t ed25519 -N "" -C "certloom release" -f packages-deploy-key
+   gh repo deploy-key add packages-deploy-key.pub --repo alexandrosnt/certloom-packages --allow-write --title "certloom release"
+   ```
+   A deploy key is limited to one repository and does not expire; rotate it by
+   adding a new one and deleting the old one.
 4. **Environment.** In the certloom repo settings, create environment
    `release`:
    - required reviewer: the owner; deployment tags: `v*` only;
    - secrets `PACKAGE_GPG_KEY` (contents of `package-key.asc`),
-     `PACKAGE_GPG_PASSPHRASE`, `PACKAGES_REPO_TOKEN`.
-   Delete `package-key.asc` from the workstation afterwards.
+     `PACKAGE_GPG_PASSPHRASE`, `PACKAGES_DEPLOY_KEY` (contents of `packages-deploy-key`).
+   Delete `package-key.asc` and `packages-deploy-key` from the workstation afterwards.
 5. **Tag protection.** A ruleset on `refs/tags/v*` that only the owner may
    create, update or delete.
 
