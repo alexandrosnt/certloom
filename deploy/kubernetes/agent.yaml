@@ -2,13 +2,9 @@
 # Read-only: get/list on certificates, requests, issuers, bundles and
 # ingresses. No access to Secrets or ConfigMaps.
 #
-# Before applying:
-#   1. set server and cluster in the ConfigMap,
-#   2. set --ca-hash to the value printed by `certloom agent token`,
-#   3. create the token Secret:
-#        kubectl -n certloom-agent create secret generic certloom-agent-enroll \
-#          --from-literal=token=<one-time token>
-#      The agent reads it only on its first start; delete it afterwards.
+# Set server, name and cluster in the ConfigMap and --ca-hash in the
+# Deployment, apply, then create the one-time enrollment token Secret and
+# restart the Deployment. docs/getting-started/kubernetes.md has every step.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -96,7 +92,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: agent
-          image: certloom-agent:dev # docker build -f Dockerfile.agent -t certloom-agent:dev .
+          image: ghcr.io/alexandrosnt/certloom-agent:0.1.0-rc.2
           args: ["run", "--config", "/etc/certloom-agent/config.yaml",
                  "--enroll-token-file", "/var/run/certloom-agent/enroll/token",
                  "--ca-hash", "sha256:REPLACE"]

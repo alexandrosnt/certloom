@@ -12,11 +12,16 @@
   `postgresql`.
 - Getting-started guides, each tested end to end on a fresh host: an overview
   of what certloom does (`docs/overview.md`), monitoring with OpenTofu and no
-  agent, renewal on Linux with nginx, and renewal on Windows with IIS. The
-  Windows guide runs on a hosted Windows Server with IIS in the `guides`
-  workflow.
+  agent, renewal on Linux with nginx, renewal on Windows with IIS, and
+  cert-manager observation in Kubernetes. The Windows guide runs on a hosted
+  Windows Server with IIS in the `guides` workflow.
 - `certloom deployment create --endpoint` (and the API's `endpoint` field)
   also takes the endpoint's host or `host:port` instead of its id.
+
+### Changed
+- `deploy/kubernetes/agent.yaml` uses the released image from GHCR instead of
+  a locally built one; the release workflow checks that it names the version
+  being released.
 
 ### Fixed
 - The Windows agent could not finish an ACME order for an IIS target: with the

@@ -35,6 +35,11 @@ jobs:
       - name: release notes
         run: deploy/release/notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
 
+      # The guide applies the manifest from the tag, so it must name the
+      # image this release pushes.
+      - name: Kubernetes manifest names this release
+        run: grep -qF "image: ghcr.io/alexandrosnt/certloom-agent:${GITHUB_REF_NAME#v}" deploy/kubernetes/agent.yaml
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod

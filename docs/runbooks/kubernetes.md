@@ -10,13 +10,17 @@ are taken from the CertificateRequest of each Certificate's current revision.
 
 ## 1. Deploy
 
+Step by step, with sample output: [getting-started/kubernetes.md](../getting-started/kubernetes.md).
+In short:
+
 ```sh
-docker build -f Dockerfile.agent -t certloom-agent:dev .   # push to your registry
 certloom agent token --name k8s-prod                         # one-time token + CA hash
 ```
 
 Edit `deploy/kubernetes/agent.yaml`: `server`, `name` and `cluster` in the ConfigMap,
-`--ca-hash` and the image in the Deployment. Then:
+`--ca-hash` in the Deployment. The image is the release's
+`ghcr.io/alexandrosnt/certloom-agent`; with a mirror, change it to your registry
+(see [airgap.md](airgap.md)). Then:
 
 ```sh
 kubectl apply -f deploy/kubernetes/agent.yaml

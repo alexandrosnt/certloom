@@ -141,5 +141,6 @@ cannot be reached. Change the thresholds and escalation with the
 
 - Renew certificates automatically on Linux with nginx: [linux-nginx.md](linux-nginx.md),
   or on Windows with IIS: [windows-iis.md](windows-iis.md)
+- See cert-manager certificates from Kubernetes: [kubernetes.md](kubernetes.md)
 - Watch AWS, Azure, Google Cloud or Cloudflare certificates: [runbooks/cloud.md](../runbooks/cloud.md)
 - Everything certloom can do: [overview.md](../overview.md)

@@ -39,7 +39,9 @@ when a `vX.Y.Z` tag is pushed (ADR-0031). Nothing is built on a workstation.
 ## Release
 
 1. Rename `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z - YYYY-MM-DD`, add a
-   new empty `## Unreleased` above it, commit and push to `main`. Wait for CI.
+   new empty `## Unreleased` above it, set the image tag in
+   `deploy/kubernetes/agent.yaml` to `X.Y.Z`, commit and push to `main`.
+   Wait for CI.
 2. Tag and push:
    ```sh
    git tag -s vX.Y.Z -m vX.Y.Z
@@ -57,8 +59,9 @@ when a `vX.Y.Z` tag is pushed (ADR-0031). Nothing is built on a workstation.
    `gh attestation verify` on one archive and both images, and an
    `apt-get install` / `dnf install` from the repositories.
 
-The workflow refuses to run when the tag is not on `main` or `CHANGELOG.md`
-has no section for the version.
+The workflow refuses to run when the tag is not on `main`, `CHANGELOG.md`
+has no section for the version, or the Kubernetes manifest names another
+image tag.
 
 A first release, or one after changes to `.goreleaser.yaml` or the release
 workflows, should be a release candidate: local and CI snapshots skip all
