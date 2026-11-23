@@ -145,6 +145,9 @@ type stack struct {
 	net       string
 	nginx     string
 	certloomd string
+	// replicas holds every certloomd container; certloomd is the first.
+	replicas []string
+	pg       string // PostgreSQL container
 	cfg       string
 	apiURL    string
 	tmp       string
@@ -162,7 +165,7 @@ type webStarter func(s *stack, run func(name string, args ...string) string, m2,
 
 func (s *stack) cli(args ...string) (string, error) {
 	cmd := exec.Command(filepath.Join(hostBin, "certloom"+exe()), args...)
-	cmd.Env = append(os.Environ(), "CERTLOOM_CONFIG="+s.cfg)
+	cmd.Env = append(os.Environ(), "CERTLOOM_CONFIG="+s.cfg, "CERTLOOM_SERVER="+s.apiURL)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -192,7 +195,7 @@ func exe() string {
 }
 
 func (s *stack) logs() {
-	for _, c := range []string{s.certloomd, s.nginx} {
+	for _, c := range append(append([]string{}, s.replicas...), s.nginx) {
 		if c == "" {
 			continue
 		}
@@ -231,6 +234,9 @@ type upOptions struct {
 	// host reaches certloomd through a forwarding container, the only one also
 	// attached to a normal network.
 	internal bool
+	// replicas runs this many certloomd containers (default 1) behind a TCP
+	// load balancer that takes over the certloomd name (ADR-0033).
+	replicas int
 }
 
 // gatewayImage forwards the host's API port into an internal network.
@@ -295,6 +301,7 @@ func upWith(t *testing.T, o upOptions, web ...webStarter) *stack {
 
 	pgPass := rnd(12)
 	pg := run("db", "-e", "POSTGRES_USER=certloom_owner", "-e", "POSTGRES_PASSWORD="+pgPass, "-e", "POSTGRES_DB=certloom", pgImage)
+	s.pg = pg
 	waitFor(t, 60*time.Second, "postgres", func() bool {
 		_, err := tryDocker("exec", pg, "pg_isready", "-U", "certloom_owner", "-d", "certloom")
 		return err == nil
@@ -319,13 +326,37 @@ func upWith(t *testing.T, o upOptions, web ...webStarter) *stack {
 	if o.internal {
 		publish = nil
 	}
-	s.certloomd = run("certloomd", append(publish, "-v", mount(linuxBin, "/certloom"), "-v", mount(m2, "/m2"),
-		"-e", "CERTLOOM_DATABASE_URL=postgres://certloom_app:"+appPass+"@db:5432/certloom?sslmode=disable",
-		"-e", "CERTLOOM_LISTEN=0.0.0.0:8443", "-e", "CERTLOOM_AGENT_LISTEN=0.0.0.0:8444", "-e", "CERTLOOM_KEK="+kek,
-		"-e", "CERTLOOM_AGENT_SERVER_NAMES=certloomd", "-e", "CERTLOOM_AGENT_PUBLIC_URL=https://certloomd:8444",
-		"-e", "CERTLOOM_ACME_CA_FILE=/m2/pebble.minica.pem", "-e", "CERTLOOM_LOG_LEVEL=debug",
-		runImage, "/certloom/certloomd", "serve", "--insecure-http")...)
-	apiPort := s.certloomd
+	serve := func(name string, publish []string) string {
+		return run(name, append(publish, "-v", mount(linuxBin, "/certloom"), "-v", mount(m2, "/m2"),
+			"-e", "CERTLOOM_DATABASE_URL=postgres://certloom_app:"+appPass+"@db:5432/certloom?sslmode=disable",
+			"-e", "CERTLOOM_LISTEN=0.0.0.0:8443", "-e", "CERTLOOM_AGENT_LISTEN=0.0.0.0:8444", "-e", "CERTLOOM_KEK="+kek,
+			"-e", "CERTLOOM_AGENT_SERVER_NAMES=certloomd", "-e", "CERTLOOM_AGENT_PUBLIC_URL=https://certloomd:8444",
+			"-e", "CERTLOOM_ACME_CA_FILE=/m2/pebble.minica.pem", "-e", "CERTLOOM_LOG_LEVEL=debug",
+			runImage, "/certloom/certloomd", "serve", "--insecure-http")...)
+	}
+	apiPort := ""
+	if o.replicas <= 1 {
+		s.certloomd = serve("certloomd", publish)
+		s.replicas = []string{s.certloomd}
+		apiPort = s.certloomd
+	} else {
+		// Agents and the CLI reach "certloomd", which is now an nginx stream
+		// proxy. TCP pass-through keeps agent mTLS end to end; a dead replica
+		// is skipped on connect failure.
+		var api, agents strings.Builder
+		for i := range o.replicas {
+			name := fmt.Sprintf("certloomd-%d", i+1)
+			s.replicas = append(s.replicas, serve(name, nil))
+			fmt.Fprintf(&api, "server %s:8443 max_fails=1 fail_timeout=5s; ", name)
+			fmt.Fprintf(&agents, "server %s:8444 max_fails=1 fail_timeout=5s; ", name)
+		}
+		s.certloomd = s.replicas[0]
+		write("lb.conf", "events {}\nstream {\n"+
+			"  upstream api { "+api.String()+"}\n  upstream agents { "+agents.String()+"}\n"+
+			"  server { listen 8443; proxy_pass api; proxy_connect_timeout 2s; }\n"+
+			"  server { listen 8444; proxy_pass agents; proxy_connect_timeout 2s; }\n}\n")
+		apiPort = run("certloomd", append(publish, "-v", mount(m2, "/m2"), nginxImage, "nginx", "-c", "/m2/lb.conf", "-g", "daemon off;")...)
+	}
 	if o.internal {
 		gw := docker(t, "", "run", "-d", "--name", "gateway-"+id, "-p", "127.0.0.1::8443", gatewayImage,
 			"tcp-listen:8443,fork,reuseaddr", "tcp-connect:certloomd:8443")

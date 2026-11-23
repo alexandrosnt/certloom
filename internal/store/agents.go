@@ -472,6 +472,21 @@ func (tx *Tx) ListDeployments(ctx context.Context) ([]*Deployment, error) {
 	return out, rows.Err()
 }
 
+// RaiseTargetSeqs moves the task sequence of an agent's deployments up to
+// what the agent reports it has executed. It never lowers a sequence and
+// returns the number of deployments it raised.
+func (tx *Tx) RaiseTargetSeqs(ctx context.Context, agentID string, seqs map[string]int64) (int64, error) {
+	var n int64
+	for target, seq := range seqs {
+		tag, err := tx.Exec(ctx, `UPDATE deployments SET target_seq = $3 WHERE agent_id = $1 AND target = $2 AND target_seq < $3`, agentID, target, seq)
+		if err != nil {
+			return n, err
+		}
+		n += tag.RowsAffected()
+	}
+	return n, nil
+}
+
 // NextTargetSeq increments and returns the deployment's task sequence.
 func (tx *Tx) NextTargetSeq(ctx context.Context, deploymentID string) (int64, error) {
 	var s int64

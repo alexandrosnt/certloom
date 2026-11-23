@@ -147,6 +147,13 @@ func (s *Service) AgentHeartbeat(ctx context.Context, id AgentIdentity, hb agent
 		if err := tx.RecordHeartbeat(ctx, id.AgentID, hb); err != nil {
 			return err
 		}
+		// Only a restore or a lost write leaves the control plane behind the
+		// agent; catch up so its next tasks are not rejected as stale.
+		if n, err := tx.RaiseTargetSeqs(ctx, id.AgentID, hb.TargetSeqs); err != nil {
+			return err
+		} else if n > 0 {
+			s.logger().Warn("raised task sequences to the agent's fence; was the database restored?", "agent", id.AgentID, "deployments", n)
+		}
 		for _, slot := range hb.ACMEAccounts {
 			if err := s.eabRegistered(ctx, tx, id.AgentID, slot); err != nil {
 				return err

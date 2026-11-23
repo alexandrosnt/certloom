@@ -27,6 +27,7 @@ milestone.
 4. `certloomd` <-> notification sinks (SMTP, webhook URLs: untrusted destinations)
 5. `certloomd` <-> external audit sink
 6. **M2:** `certloomd` <-> agent (mTLS + signed tasks); agent <-> local OS/Nginx; agent <-> ACME CA
+. **M8:** load balancer in front of several `certloomd` replicas (TCP pass-through for agents, so mTLS still ends at certloomd)
 . **M4/M5:** agent <-> Kubernetes API and cloud provider APIs (read-only)
 9. **M6:** plugin publisher -> package + signature -> `certloom-plugin` -> agent host; agent <-> plugin process
 10. **M6:** Terraform/OpenTofu and Ansible (operator machines, plan/state files, logs) <-> REST API
@@ -65,6 +66,9 @@ milestone.
 | T30 | A rogue root pushed to trust stores through certloom, or planted on a host outside it | Elevation / Tampering | Hosts write only stores declared `manage` in their own agent config; certloom adds and removes only its own entries; tasks are signed (T6); bundle changes need `trust:manage` (owner) and are audited with every anchor added or removed; forced removals carry an audited reason; agents report what each store really holds, and anchors in no bundle raise `trust_store_unknown_anchor` (ADR-0030). Residual: an owner account, or whoever controls certloomd, can push a root to every managed store; a second-person approval gate is in docs/TODO.md. | M7: agent trust tests, workflow `TestTrustBundleDeliveryAndDrift` and `TestTrustBundleRemovalSafety`, Debian and Rocky containers (`TestOSTrustStores`), LocalMachine\Root on the Windows CI runner |
 | T29 | Private CA credentials on the control plane misused or leaked (Vault AppRole secret_id or token, step-ca provisioner key) | Elevation / Info disclosure | Stored under the KEK bound to the issuer, write-only in the API, never in tasks; the CA side limits what they sign (Vault role, step-ca provisioner). certloomd sends only CSRs that match the approved spec exactly (names, key, no extra extensions) and never uses `sign-verbatim`; AppRole tokens are revoked after each call; every use is audited. TLS to the CA trusts only the issuer's CA bundle, with no redirects (ADR-0028). Residual: anyone who controls certloomd can sign within the role. | M7: privateca unit tests, workflow `privateca_test`, e2e `TestVaultAndStepCAIssuers` |
 | T28 | Forged or replayed event webhooks; webhooks used for SSRF | Spoofing / Elevation | Standard Webhooks signatures with timestamps and secret rotation; destination checks as in T9; failing endpoints are disabled (ADR-0021). | M3: Standard Webhooks test vectors, workflow `TestEventWebhooks` |
+| T31 | Two replicas run the same scheduler, or a replica keeps acting after losing leadership (split brain) | Tampering / DoS | One scheduler lease row; a replica counts its lease from before the renewing query, so it stops before the database lets another take over; a tick still running when the lease is lost may overlap the next leader's, so loops must stay safe under overlap (a rule in ADR-0033; most use SKIP LOCKED or upserts); job results stay lease-epoch fenced (T14, ADR-0033). | M8: `leader` tests, e2e `TestHAReplicas` (SIGKILL of the leader mid-renewal) |
+| T32 | A restored or rolled-back database replays old state to agents | Tampering | The agent's per-target sequence fence and nonce store are unchanged by a restore. Agents report their fence in the heartbeat and the control plane only ever raises its counters, for that agent's own deployments; a lying agent can only block its own targets. Tasks it already ran are answered from its stored results, never re-run (ADR-0033). | M8: workflow `TestRestoredSequenceCatchesUp`, `agent.TestExecutedTaskResultResent`, e2e `TestDRRestoreWithAgent` |
+| T33 | More copies of the KEK with several replicas, and its escrow copy | Info disclosure | One KEK file per replica, readable only by certloomd; escrow copies kept apart from database backups (`docs/runbooks/dr.md`). Keys derived from it (CSRF) are bound to their purpose with HKDF labels. | M8 |
 
 ## Accepted residual risks (to be reviewed)
 - If no external audit sink is configured, a DB superuser can rewrite the audit trail undetectably by recomputing the hashes. `certloomd` logs a warning at startup, and the UI shows an error banner, in that case.
@@ -73,5 +77,4 @@ milestone.
 
 ## Open items
 - Offline autonomy is deliberately limited: agents never start issuance on their own (ADR-0004).
-- Threat-model multi-replica HA (M8) when it is designed.
 - Keyless plugin verification is tested against a virtual Sigstore only (docs/TODO.md).

@@ -649,3 +649,11 @@ func (s *Service) ScheduleCertSweeps(ctx context.Context) error {
 	}
 	return nil
 }
+
+// logger returns s.Log, or the default logger when none is set (tests).
+func (s *Service) logger() *slog.Logger {
+	if s.Log != nil {
+		return s.Log
+	}
+	return slog.Default()
+}

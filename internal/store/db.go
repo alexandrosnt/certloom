@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
 
 //go:embed migrations/*.sql
@@ -58,7 +59,13 @@ func Migrate(ctx context.Context, ownerURL string) error {
 }
 
 func migrate(ctx context.Context, sqldb *sql.DB) error {
-	p, err := goose.NewProvider(goose.DialectPostgres, sqldb, migrationsFS())
+	// Replicas upgraded together all run migrate; the advisory lock makes
+	// the others wait (up to 30 minutes) instead of racing the first one.
+	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(5, 360))
+	if err != nil {
+		return err
+	}
+	p, err := goose.NewProvider(goose.DialectPostgres, sqldb, migrationsFS(), goose.WithSessionLocker(locker))
 	if err != nil {
 		return err
 	}

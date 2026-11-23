@@ -36,7 +36,46 @@ type DB struct {
 // New creates a fresh database, migrates it, and connects as certloom_app.
 func New(t testing.TB) *DB {
 	t.Helper()
-	base := os.Getenv(EnvURL)
+	ctx := context.Background()
+	base, ownerURL, admin := empty(t)
+	defer admin.Close(ctx)
+
+	if err := store.Migrate(ctx, ownerURL); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	// certloom_app is cluster-wide; allow login for tests only.
+	if _, err := admin.Exec(ctx, "ALTER ROLE certloom_app LOGIN PASSWORD '"+appPassword+"'"); err != nil {
+		t.Fatalf("enable certloom_app login: %v", err)
+	}
+	appURL := withDB(t, base, dbName(t, ownerURL), url.UserPassword("certloom_app", appPassword))
+	db, err := store.Open(ctx, appURL)
+	if err != nil {
+		t.Fatalf("open as certloom_app: %v", err)
+	}
+	t.Cleanup(db.Close)
+	owner, err := pgxpool.New(ctx, ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(owner.Close)
+	return &DB{DB: db, Owner: owner, OwnerURL: ownerURL, AppURL: appURL}
+}
+
+// Empty creates a fresh database without running migrations and returns its
+// owner URL. The setup lock shared with other test packages is held until the
+// test ends, because migrations create the cluster-wide certloom_app role.
+func Empty(t testing.TB) string {
+	t.Helper()
+	_, ownerURL, admin := empty(t)
+	t.Cleanup(func() { _ = admin.Close(context.Background()) })
+	return ownerURL
+}
+
+// empty creates the database and takes the setup lock on the returned
+// connection; closing the connection releases it.
+func empty(t testing.TB) (base, ownerURL string, admin *pgx.Conn) {
+	t.Helper()
+	base = os.Getenv(EnvURL)
 	if base == "" {
 		t.Skipf("%s not set; skipping database test", EnvURL)
 	}
@@ -45,7 +84,6 @@ func New(t testing.TB) *DB {
 	if err != nil {
 		t.Fatalf("connect admin: %v", err)
 	}
-	defer admin.Close(ctx)
 
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
@@ -67,28 +105,15 @@ func New(t testing.TB) *DB {
 	if _, err := admin.Exec(ctx, "SELECT pg_advisory_lock(7231001)"); err != nil {
 		t.Fatalf("advisory lock: %v", err)
 	}
-	defer func() { _, _ = admin.Exec(ctx, "SELECT pg_advisory_unlock(7231001)") }()
+	return base, withDB(t, base, name, nil), admin
+}
 
-	ownerURL := withDB(t, base, name, nil)
-	if err := store.Migrate(ctx, ownerURL); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	// certloom_app is cluster-wide; allow login for tests only.
-	if _, err := admin.Exec(ctx, "ALTER ROLE certloom_app LOGIN PASSWORD '"+appPassword+"'"); err != nil {
-		t.Fatalf("enable certloom_app login: %v", err)
-	}
-	appURL := withDB(t, base, name, url.UserPassword("certloom_app", appPassword))
-	db, err := store.Open(ctx, appURL)
-	if err != nil {
-		t.Fatalf("open as certloom_app: %v", err)
-	}
-	t.Cleanup(db.Close)
-	owner, err := pgxpool.New(ctx, ownerURL)
+func dbName(t testing.TB, rawURL string) string {
+	u, err := url.Parse(rawURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(owner.Close)
-	return &DB{DB: db, Owner: owner, OwnerURL: ownerURL, AppURL: appURL}
+	return u.Path[1:]
 }
 
 func withDB(t testing.TB, base, db string, user *url.Userinfo) string {

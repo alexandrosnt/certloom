@@ -103,6 +103,30 @@ func (s *State) Record(t *agentproto.Task, r agentproto.Result) error {
 	})
 }
 
+// Seqs returns the sequence fence of every target.
+func (s *State) Seqs() (map[string]int64, error) {
+	out := map[string]int64{}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		return tx.Bucket(bSeq).ForEach(func(k, v []byte) error {
+			out[string(k)] = getInt(v)
+			return nil
+		})
+	})
+	return out, err
+}
+
+// Resend queues a stored result for delivery again. The control plane asks
+// for a task it already has a result for only when it lost that result, for
+// example after a database restore.
+func (s *State) Resend(taskID string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		if tx.Bucket(bResults).Get([]byte(taskID)) == nil {
+			return nil
+		}
+		return tx.Bucket(bUnsent).Put([]byte(taskID), []byte{1})
+	})
+}
+
 // Unsent lists task ids whose results are not yet acknowledged.
 func (s *State) Unsent() ([]string, error) {
 	var out []string

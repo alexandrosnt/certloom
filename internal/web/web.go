@@ -48,9 +48,8 @@ type UI struct {
 
 // New parses templates and returns the UI.
 func New(svc *app.Service, log *slog.Logger) *UI {
-	u := &UI{svc: svc, log: log, tmpl: map[string]*template.Template{}, csrfKey: make([]byte, 32),
+	u := &UI{svc: svc, log: log, tmpl: map[string]*template.Template{}, csrfKey: csrfKey(svc, log),
 		loginLimit: api.NewLimiter(0.2, 10)}
-	_, _ = rand.Read(u.csrfKey)
 	funcs := template.FuncMap{
 		"ts": func(t any) string {
 			switch v := t.(type) {
@@ -502,4 +501,17 @@ func (u *UI) audit(w http.ResponseWriter, r *http.Request, p authz.Principal) er
 		return err
 	}
 	return u.render(w, r, "audit", p, "Audit", "audit", map[string]any{"Events": ev, "Verify": v, "Export": exp})
+}
+
+// csrfKey derives the CSRF key from the KEK so that a form served by one
+// replica verifies on any other. Without a KEK there is only one key per
+// process, which is fine for a single replica.
+func csrfKey(svc *app.Service, log *slog.Logger) []byte {
+	if svc.PKI != nil && svc.PKI.KEK != nil {
+		return svc.PKI.KEK.Derive("certloom csrf v1")
+	}
+	log.Warn("no KEK configured: CSRF tokens are valid only on this replica")
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return b
 }

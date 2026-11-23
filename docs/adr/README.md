@@ -42,3 +42,4 @@ External facts (library versions, CA behavior) were last checked on 2026-11-20.
 | [0030](0030-trust-bundles.md) | Trust-bundle distribution and drift detection | Accepted |
 | [0031](0031-release-integrity.md) | Signed releases, SBOMs and build provenance | Accepted |
 | [0032](0032-airgapped-install.md) | Air-gapped installation | Accepted |
+| [0033](0033-high-availability-and-dr.md) | High availability and disaster recovery | Accepted |

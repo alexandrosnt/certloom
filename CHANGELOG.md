@@ -3,10 +3,24 @@
 ## Unreleased
 
 ### Fixed
+- After a database restore, renewals of targets the agent had worked on since the
+  backup were rejected as stale until the task counter caught up, and tasks whose
+  results had been acknowledged before the failure went unanswered until they
+  expired. Agents now
+  report their sequence fence in the heartbeat and re-send stored results.
+- Web UI forms failed across replicas without sticky sessions: the CSRF key is now
+  derived from the KEK.
 - The plugin output limit (64 KiB) was not enforced: the buffer inherited `ReadFrom`, which
   `os/exec` used instead of the limited `Write`.
 
 ### Added
+- High availability and disaster recovery (ADR-0033): any number of `certloomd`
+  replicas behind a load balancer, with the periodic schedulers on one elected
+  replica (`leader` table) and jobs on all of them; `certloomd migrate` takes an
+  advisory lock. `docs/runbooks/ha.md` (load balancer, PostgreSQL HA options,
+  upgrades) and `docs/runbooks/dr.md` (backup levels, KEK escrow, restore, drill).
+  New e2e tests kill the leader mid-renewal and restore a backup older than the
+  agent's last tasks.
 - Release pipeline (ADR-0031): a `vX.Y.Z` tag builds archives, deb/rpm packages and
   multi-arch images with GoReleaser, signs `SHA256SUMS` and the images with Sigstore
   (keyless), attaches SPDX SBOMs and GitHub build provenance, and publishes the packages

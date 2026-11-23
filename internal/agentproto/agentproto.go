@@ -153,6 +153,10 @@ type Heartbeat struct {
 	Plugins []PluginInfo `json:"plugins,omitempty"`
 	// TrustStores lists the trust stores declared in the agent config.
 	TrustStores []TrustStoreInfo `json:"trust_stores,omitempty"`
+	// TargetSeqs is the highest task sequence executed per target. After a
+	// database restore the control plane raises its counters to these values,
+	// so new tasks pass the agent's sequence fence (ADR-0033).
+	TargetSeqs map[string]int64 `json:"target_seqs,omitempty"`
 }
 
 // PluginInfo describes one plugin an agent may run.

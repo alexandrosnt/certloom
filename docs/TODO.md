@@ -103,8 +103,14 @@ Not done yet, roughly in the order I want to tackle it.
   `certloom_app`.
 - `test/acme` pulls `pebble:latest`; pin it.
 - `certloom schedule preview` (next renewal and window times with reasons).
-- Rate limits are per process.
-- Only one `certloomd` replica has been tested.
+- Rate limits are per replica (documented in `docs/runbooks/ha.md`); a shared limiter in
+  PostgreSQL if that turns out to matter.
+- Review the existing periodic loops for safety when two runs overlap (a leader that
+  lost its lease mid-tick); ADR-0033 makes it a rule for new loops.
+- The Compose install sets no KEK, so it runs without agent support and with a
+  per-process CSRF key; add a generated KEK file to the Compose setup.
+- HA e2e covers two replicas behind nginx and a PostgreSQL restart, not a real
+  Patroni or CloudNativePG failover.
 - `members` has no RLS on purpose (sign-in needs it before the org is known); maybe move
   the lookup into a SECURITY DEFINER function instead.
 - OpenAPI check only compares routes, not request/response bodies.

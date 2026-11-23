@@ -1,6 +1,7 @@
 // Package worker runs the scheduler, job workers and notification delivery.
-// All durable state lives in Postgres; these loops only poll it,
-// so any number of replicas can run them concurrently.
+// All durable state lives in Postgres. Job and delivery loops claim work with
+// SKIP LOCKED and run on every replica; the periodic schedulers run only on
+// the replica that holds the scheduler lease.
 package worker
 
 import (
@@ -13,6 +14,7 @@ import (
 	"github.com/alexandrosnt/certloom/internal/app"
 	"github.com/alexandrosnt/certloom/internal/auditexport"
 	"github.com/alexandrosnt/certloom/internal/jobs"
+	"github.com/alexandrosnt/certloom/internal/leader"
 	"github.com/alexandrosnt/certloom/internal/notify"
 )
 
@@ -26,6 +28,8 @@ type Config struct {
 	DeliverEvery  time.Duration // outbox drain, default 2s
 	// AuditExporter, if set, runs every 5s.
 	AuditExporter *auditexport.Exporter
+	// LeaderTTL is the scheduler lease length, default 15s.
+	LeaderTTL time.Duration
 }
 
 func (c *Config) defaults() {
@@ -69,14 +73,36 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 			}
 		}()
 	}
-	loop("schedule", cfg.ScheduleEvery, func(ctx context.Context) error {
+	// Periodic schedulers run only on the elected replica (ADR-0033). They
+	// check often so that a new leader catches up right after a failover.
+	el := &leader.Elector{Pool: svc.DB.Pool, Name: "scheduler", Holder: cfg.WorkerID, TTL: cfg.LeaderTTL, Log: log}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		el.Run(ctx)
+	}()
+	periodic := func(name string, every time.Duration, fn func(context.Context) error) {
+		var last time.Time
+		loop(name, min(every, time.Second), func(ctx context.Context) error {
+			if !el.IsLeader() {
+				last = time.Time{}
+				return nil
+			}
+			if !last.IsZero() && time.Since(last) < every {
+				return nil
+			}
+			last = time.Now()
+			return fn(ctx)
+		})
+	}
+	periodic("schedule", cfg.ScheduleEvery, func(ctx context.Context) error {
 		n, err := svc.ScheduleDueProbes(ctx)
 		if n > 0 {
 			log.Debug("scheduled probes", "count", n)
 		}
 		return err
 	})
-	loop("sweep", cfg.SweepEvery, svc.ScheduleCertSweeps)
+	periodic("sweep", cfg.SweepEvery, svc.ScheduleCertSweeps)
 	loop("deliver", cfg.DeliverEvery, func(ctx context.Context) error {
 		_, err := d.RunOnce(ctx, 20)
 		return err
@@ -87,27 +113,27 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 			_, err := wd.RunOnce(ctx, 20)
 			return err
 		})
-		loop("webhook-sweep", 10*time.Minute, svc.SweepWebhooks)
+		periodic("webhook-sweep", 10*time.Minute, svc.SweepWebhooks)
 	}
 
-	loop("escalate", time.Minute, func(ctx context.Context) error {
+	periodic("escalate", time.Minute, func(ctx context.Context) error {
 		n, err := svc.EscalateAlerts(ctx)
 		if n > 0 {
 			log.Info("escalated alerts", "count", n)
 		}
 		return err
 	})
-	loop("exceptions", time.Minute, func(ctx context.Context) error {
+	periodic("exceptions", time.Minute, func(ctx context.Context) error {
 		n, err := svc.SweepExceptions(ctx)
 		if n > 0 {
 			log.Info("policy exceptions ended", "count", n)
 		}
 		return err
 	})
-	loop("eab", 10*time.Minute, svc.SweepEABPools)
-	loop("inventory", time.Minute, svc.RequestDueInventories)
-	loop("trust", 5*time.Minute, svc.SendDueTrustBundles)
-	loop("prune", time.Hour, func(ctx context.Context) error {
+	periodic("eab", 10*time.Minute, svc.SweepEABPools)
+	periodic("inventory", time.Minute, svc.RequestDueInventories)
+	periodic("trust", 5*time.Minute, svc.SendDueTrustBundles)
+	periodic("prune", time.Hour, func(ctx context.Context) error {
 		r, err := svc.Prune(ctx)
 		if r.Observations+r.IdempotencyKeys+r.Sessions > 0 {
 			log.Info("pruned", "observations", r.Observations, "idempotency_keys", r.IdempotencyKeys, "sessions", r.Sessions)
@@ -124,7 +150,7 @@ func Run(ctx context.Context, svc *app.Service, d *notify.Deliverer, cfg Config,
 	kinds := []string{app.JobKindProbe, app.JobKindCertSweep}
 	if svc.PKI != nil {
 		kinds = append(kinds, app.JobKindAdvance, app.JobKindARICheck)
-		loop("renewals", cfg.ScheduleEvery, func(ctx context.Context) error {
+		periodic("renewals", cfg.ScheduleEvery, func(ctx context.Context) error {
 			n, err := svc.ScheduleRenewals(ctx)
 			if n > 0 {
 				log.Info("started renewal runs", "count", n)

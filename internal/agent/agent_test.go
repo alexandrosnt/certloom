@@ -269,3 +269,24 @@ func TestDeployAndRollbackOnSymlinks(t *testing.T) {
 		t.Fatal("must refuse to replace a real directory")
 	}
 }
+
+// After a control-plane restore a task the agent finished, and whose result
+// was acknowledged, can be offered again. The agent must not run it twice but
+// must send its stored result again.
+func TestExecutedTaskResultResent(t *testing.T) {
+	a, key, ran := testAgent(t)
+	ctx := context.Background()
+	env, _ := agentproto.Sign(key, task("r1", agentproto.TaskDeploy, 1))
+	a.Execute(ctx, env)
+	if err := a.state.Acked("r1"); err != nil {
+		t.Fatal(err)
+	}
+	a.Execute(ctx, env)
+	if len(*ran) != 1 {
+		t.Fatalf("task ran %d times", len(*ran))
+	}
+	unsent, err := a.state.Unsent()
+	if err != nil || len(unsent) != 1 || unsent[0] != "r1" {
+		t.Fatalf("unsent = %v, %v", unsent, err)
+	}
+}

@@ -5,6 +5,8 @@ package kek
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
+	"crypto/sha256"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -15,7 +17,10 @@ import (
 )
 
 // KEK wraps and unwraps data keys / small secrets with AES-256-GCM.
-type KEK struct{ aead cipher.AEAD }
+type KEK struct {
+	aead cipher.AEAD
+	key  []byte
+}
 
 // ErrMissing is returned when no KEK is configured.
 var ErrMissing = errors.New("no key-encryption key configured (set CERTLOOM_KEK_FILE or CERTLOOM_KEK; generate one with `certloomd gen-kek`)")
@@ -33,7 +38,7 @@ func New(key []byte) (*KEK, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &KEK{aead: a}, nil
+	return &KEK{aead: a, key: append([]byte(nil), key...)}, nil
 }
 
 // FromEnv loads the KEK from CERTLOOM_KEK_FILE (preferred) or CERTLOOM_KEK (base64).
@@ -86,4 +91,15 @@ func (k *KEK) Open(ciphertext []byte, aad string) ([]byte, error) {
 		return nil, errors.New("cannot decrypt system key: wrong KEK or corrupted data")
 	}
 	return pt, nil
+}
+
+// Derive returns a 32-byte subkey for label (HKDF-SHA256). Every process with
+// the same KEK derives the same subkey, which is what lets replicas share
+// keys such as the CSRF key without storing them.
+func (k *KEK) Derive(label string) []byte {
+	b, err := hkdf.Key(sha256.New, k.key, nil, label, 32)
+	if err != nil {
+		panic(err) // only fails for lengths HKDF cannot produce
+	}
+	return b
 }

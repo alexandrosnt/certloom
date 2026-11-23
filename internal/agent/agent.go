@@ -269,6 +269,11 @@ func (a *Agent) do(ctx context.Context, method, path string, in, out any) error 
 func (a *Agent) Heartbeat(ctx context.Context) error {
 	host, _ := os.Hostname()
 	hb := agentproto.Heartbeat{Version: version.Version, Hostname: host}
+	if seqs, err := a.state.Seqs(); err == nil && len(seqs) > 0 {
+		hb.TargetSeqs = seqs
+	} else if err != nil {
+		a.log.Warn("read sequence fences", "error", err)
+	}
 	for _, t := range a.cfg.Targets {
 		hb.Targets = append(hb.Targets, agentproto.Target{Name: t.Name, Type: t.Type, AllowedSANs: t.AllowedSANs, ACME: t.Webroot != "",
 			Site: t.Site, Bindings: t.Bindings, Plugin: pluginTargetName(t)})
@@ -360,7 +365,12 @@ func (a *Agent) Execute(ctx context.Context, env agentproto.Envelope) {
 		return
 	}
 	if prev, _ := a.state.Result(t.ID); prev != nil {
-		return // already executed; flushUnsent re-delivers the stored result
+		// Already executed. Queue the stored result again even if it was
+		// acknowledged once; flushUnsent delivers it.
+		if err := a.state.Resend(t.ID); err != nil {
+			a.log.Warn("queue stored result", "task", t.ID, "error", err)
+		}
+		return
 	}
 	res := agentproto.Result{OK: true}
 	h := a.handlers[t.Type]
