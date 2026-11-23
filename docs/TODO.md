@@ -16,8 +16,8 @@ Not done yet, roughly in the order I want to tackle it.
   the control plane need their own ADR.
 
 ## Private CAs
-- Test the ACME issuer against Vault's and step-ca's ACME servers (HTTP-01 from the CA
-  to nginx, EAB on Vault) in `test/acme`; until then only the native path is claimed.
+- Test the ACME issuer against Vault's ACME server (HTTP-01 from the CA to nginx, EAB)
+  in `test/acme`. step-ca's ACME provisioner is covered by `TestAirgapRenewal`.
 - Vault: Kubernetes and JWT auth, and the secret_id from a file or Vault Agent instead of
   the database. step-ca: a root fingerprint instead of a CA bundle, and the X5C and OIDC
   provisioners.

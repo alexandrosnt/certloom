@@ -41,10 +41,13 @@ when a `vX.Y.Z` tag is pushed (ADR-0031). Nothing is built on a workstation.
    the `latest` image tag.
 3. Approve the two `release` deployments in the Actions run (build, then
    repository publish).
-4. Verify what was published, from a clean machine, with the commands in
-   `docs/verify-release.md`: cosign on `SHA256SUMS`, `gh attestation verify` on
-   one archive and both images, and an `apt-get install` / `dnf install` from
-   the repositories.
+4. After the first release only: set both GHCR packages (`certloom`,
+   `certloom-agent`) to public in their package settings; new packages start
+   private, and users and mirrors pull them without credentials.
+5. Verify what was published, from a clean machine, with the commands in
+   `docs/verify-release.md`: cosign on `SHA256SUMS` and `SHA256SUMS-offline`,
+   `gh attestation verify` on one archive and both images, and an
+   `apt-get install` / `dnf install` from the repositories.
 
 The workflow refuses to run when the tag is not on `main` or `CHANGELOG.md`
 has no section for the version.

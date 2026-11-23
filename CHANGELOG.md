@@ -12,6 +12,11 @@
   (keyless), attaches SPDX SBOMs and GitHub build provenance, and publishes the packages
   to signed apt and yum repositories. Builds are reproducible (checked in CI).
   `docs/verify-release.md` shows how to verify, also offline.
+- Air-gapped installation (ADR-0032): each release gets a signed offline bundle per
+  architecture (archives, packages, images including PostgreSQL, Compose files, docs,
+  `CONTENTS.sha256`). `docs/runbooks/airgap.md` covers the bundle and mirroring into
+  internal registries and package repositories with signatures kept. A new e2e test
+  issues and renews through step-ca's ACME server on a network without a route out.
 - `certloomd` deb and rpm packages with a hardened, unprivileged systemd unit
   (`docs/runbooks/install-packages.md`).
 - `deploy/packaging/build.sh` now builds all archives and packages (amd64 and arm64)

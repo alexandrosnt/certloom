@@ -77,6 +77,12 @@ cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
 `gh attestation verify --bundle <file> --custom-trusted-root trusted_root.json`
 does the same for provenance downloaded with `gh attestation download`.
 
+## Offline bundles
+
+`certloom-offline_<version>_linux_<arch>.tar.gz` are listed in
+`SHA256SUMS-offline`, signed the same way (`SHA256SUMS-offline.sigstore.json`,
+same identity). See `docs/runbooks/airgap.md`.
+
 ## deb and rpm packages
 
 Packages are also signed with the certloom packaging key (OpenPGP, RSA 4096):

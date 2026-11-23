@@ -97,6 +97,35 @@ jobs:
           subject-digest: ${{ steps.images.outputs.certloom_agent }}
           push-to-registry: true
 
+      - name: public packaging key
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 0700 "$GNUPGHOME"
+          gpg --batch --quiet --import "$RUNNER_TEMP/package-key.asc"
+          gpg --batch --armor --export > dist/gpg.key
+          rm -rf "$GNUPGHOME"
+
+      # ADR-0032: one offline bundle per architecture, signed and attested
+      # like the other release files.
+      - name: offline bundles
+        run: |
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          export SOURCE_DATE_EPOCH
+          for arch in amd64 arm64; do
+            deploy/release/offline-bundle.sh "$GITHUB_REF_NAME" "$arch" dist dist-offline
+          done
+          cd dist-offline
+          sha256sum -- *.tar.gz > SHA256SUMS-offline
+          cosign sign-blob --yes --bundle SHA256SUMS-offline.sigstore.json SHA256SUMS-offline
+      - name: provenance for offline bundles
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist-offline/SHA256SUMS-offline
+      - name: upload offline bundles
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist-offline/* dist/gpg.key --clobber
+
       - name: remove packaging key
         if: always()
         run: rm -f "$RUNNER_TEMP/package-key.asc"

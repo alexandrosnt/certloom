@@ -227,7 +227,14 @@ type upOptions struct {
 	pebbleConfig string   // replaces pebbleConfig
 	// before starts extra containers before Pebble; m2 is the shared directory.
 	before func(run func(name string, args ...string) string, m2 string)
+	// internal puts the stack on a Docker network without a route out. The
+	// host reaches certloomd through a forwarding container, the only one also
+	// attached to a normal network.
+	internal bool
 }
+
+// gatewayImage forwards the host's API port into an internal network.
+const gatewayImage = "alpine/socat:1.8.0.3"
 
 func upWith(t *testing.T, o upOptions, web ...webStarter) *stack {
 	for _, img := range []string{pgImage, pebbleImage, nginxImage, runImage} {
@@ -240,7 +247,11 @@ func upWith(t *testing.T, o upOptions, web ...webStarter) *stack {
 	id := rnd(4)
 	s := &stack{t: t, net: "certloom-acme-" + id, tmp: t.TempDir()}
 	s.cfg = filepath.Join(s.tmp, "certloom.json")
-	docker(t, "", "network", "create", s.net)
+	if o.internal {
+		docker(t, "", "network", "create", "--internal", s.net)
+	} else {
+		docker(t, "", "network", "create", s.net)
+	}
 	var containers []string
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -304,13 +315,25 @@ func upWith(t *testing.T, o upOptions, web ...webStarter) *stack {
 	run("pebble", append([]string{"-v", mount(m2, "/m2"), "-e", "PEBBLE_VA_NOSLEEP=1", pebbleImage, "-config", "/m2/pebble.json"}, o.pebbleArgs...)...)
 
 	kek := base64.StdEncoding.EncodeToString([]byte(rnd(16)))
-	s.certloomd = run("certloomd", "-p", "127.0.0.1::8443", "-v", mount(linuxBin, "/certloom"), "-v", mount(m2, "/m2"),
+	publish := []string{"-p", "127.0.0.1::8443"}
+	if o.internal {
+		publish = nil
+	}
+	s.certloomd = run("certloomd", append(publish, "-v", mount(linuxBin, "/certloom"), "-v", mount(m2, "/m2"),
 		"-e", "CERTLOOM_DATABASE_URL=postgres://certloom_app:"+appPass+"@db:5432/certloom?sslmode=disable",
 		"-e", "CERTLOOM_LISTEN=0.0.0.0:8443", "-e", "CERTLOOM_AGENT_LISTEN=0.0.0.0:8444", "-e", "CERTLOOM_KEK="+kek,
 		"-e", "CERTLOOM_AGENT_SERVER_NAMES=certloomd", "-e", "CERTLOOM_AGENT_PUBLIC_URL=https://certloomd:8444",
 		"-e", "CERTLOOM_ACME_CA_FILE=/m2/pebble.minica.pem", "-e", "CERTLOOM_LOG_LEVEL=debug",
-		runImage, "/certloom/certloomd", "serve", "--insecure-http")
-	port := docker(t, "", "port", s.certloomd, "8443/tcp")
+		runImage, "/certloom/certloomd", "serve", "--insecure-http")...)
+	apiPort := s.certloomd
+	if o.internal {
+		gw := docker(t, "", "run", "-d", "--name", "gateway-"+id, "-p", "127.0.0.1::8443", gatewayImage,
+			"tcp-listen:8443,fork,reuseaddr", "tcp-connect:certloomd:8443")
+		containers = append(containers, gw)
+		docker(t, "", "network", "connect", s.net, gw)
+		apiPort = gw
+	}
+	port := docker(t, "", "port", apiPort, "8443/tcp")
 	s.apiURL = "http://" + strings.Split(port, "\n")[0]
 	s.ownerTok = docker(t, "", "exec", s.certloomd, "/certloom/certloomd", "bootstrap", "--org", "m2")
 	login := exec.Command(filepath.Join(hostBin, "certloom"+exe()), "login", "--server", s.apiURL, "--token-stdin")

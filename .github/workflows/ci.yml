@@ -194,6 +194,15 @@ jobs:
         run: docker run --rm -v "$PWD:/src" -w /src goreleaser/goreleaser:v2.20.0 check
       - name: build archives, packages and images (unsigned snapshot)
         run: IMAGES=1 sh deploy/packaging/build.sh
+      - name: offline bundle (amd64) from the snapshot images
+        run: |
+          v=$(jq -r .version dist/metadata.json)
+          IMAGE_SOURCE=docker-daemon:ghcr.io/alexandrosnt IMAGE_TAG="$v-amd64" \
+            sh deploy/release/offline-bundle.sh "$v" amd64 dist dist-offline
+          mkdir x && tar xzf dist-offline/*.tar.gz -C x
+          (cd x/* && sha256sum -c --quiet CONTENTS.sha256)
+          docker load -i x/*/images/certloom.tar
+          docker run --rm "certloom:$v" version
       - uses: actions/upload-artifact@v4
         with:
           name: packages
