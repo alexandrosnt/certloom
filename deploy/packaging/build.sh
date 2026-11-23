@@ -2,7 +2,7 @@
 # Builds every release artifact (archives, deb and rpm packages) into dist/ as
 # an unsigned snapshot, from .goreleaser.yaml, the same file releases use.
 #
-#   deploy/packaging/build.sh                 # version 0.0.0-dev+<commit>
+#   deploy/packaging/build.sh                 # version 0.0.0-dev.<commit>
 #   VERSION=1.2.3-rc1 deploy/packaging/build.sh
 #   IMAGES=1 deploy/packaging/build.sh        # also build the container images
 #

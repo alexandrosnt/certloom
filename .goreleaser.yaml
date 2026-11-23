@@ -59,24 +59,36 @@ builds:
         goarch: arm64
 
 archives:
+  # Fixed owners and times for every entry: checkout times differ between
+  # machines and would change the archive bytes.
   - id: certloomd
     ids: [certloomd]
     name_template: "certloomd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE, README.md]
+    builds_info: &archived
+      owner: root
+      group: root
+      mtime: "{{ .CommitDate }}"
+    files: &archivefiles
+      - src: LICENSE
+        info: &docinfo { owner: root, group: root, mode: 0o644, mtime: "{{ .CommitDate }}" }
+      - src: README.md
+        info: *docinfo
   - id: certloom
     ids: [certloom]
     name_template: "certloom_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats: [zip]
-    files: [LICENSE, README.md]
+    builds_info: *archived
+    files: *archivefiles
   - id: certloom-agent
     ids: [certloom-agent, certloom-plugin]
     name_template: "certloom-agent_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats: [zip]
-    files: [LICENSE, README.md]
+    builds_info: *archived
+    files: *archivefiles
 
 nfpms:
   - id: certloom-agent
@@ -209,7 +221,7 @@ docker_signs:
 # Local and test builds (deploy/packaging/build.sh) may pin the version, so
 # tests can check what the binaries report.
 snapshot:
-  version_template: '{{ if index .Env "CERTLOOM_SNAPSHOT_VERSION" }}{{ .Env.CERTLOOM_SNAPSHOT_VERSION }}{{ else }}0.0.0-dev+{{ .ShortCommit }}{{ end }}'
+  version_template: '{{ if index .Env "CERTLOOM_SNAPSHOT_VERSION" }}{{ .Env.CERTLOOM_SNAPSHOT_VERSION }}{{ else }}0.0.0-dev.{{ .ShortCommit }}{{ end }}'
 
 changelog:
   disable: true
