@@ -40,8 +40,9 @@ serve, alerts before anything expires, and renews and deploys certificates throu
 on your hosts. A renewal counts as done only once the endpoint is seen serving the new
 certificate.
 
-Pre-1.0 and under active development. There are no tagged releases yet; build from `main`
-or run the [Compose install](deploy/compose/README.md).
+Pre-1.0 and under active development. The first release candidate is `v0.1.0-rc.1`
+([releases](../../releases)); you can also build from `main` or run the
+[Compose install](deploy/compose/README.md).
 
 ## Highlights
 
@@ -165,7 +166,8 @@ CERTLOOM_KUBE_E2E=1 go test ./test/kube/                  # kind + cert-manager 
 ## Design documents
 
 Decisions are recorded as ADRs in [docs/adr/](docs/adr/README.md); the threat model is
-[docs/threat-model.md](docs/threat-model.md). Security reports: [SECURITY.md](SECURITY.md).
+[docs/threat-model.md](docs/threat-model.md). Security reports: [SECURITY.md](SECURITY.md);
+scope for external reviewers: [docs/security-review.md](docs/security-review.md).
 
 ## License
 
